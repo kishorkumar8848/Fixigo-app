@@ -5,6 +5,7 @@ import 'track_repair_screen.dart';
 import 'session.dart';
 import 'api.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'location_picker_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final ValueChanged<String>? onCategorySelected;
@@ -245,9 +246,49 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ── Hero Header ───────────────────────────────────────────────────────────────
-class _HomeHeader extends StatelessWidget {
+class _HomeHeader extends StatefulWidget {
+  @override
+  State<_HomeHeader> createState() => _HomeHeaderState();
+}
+
+class _HomeHeaderState extends State<_HomeHeader> {
+  Future<void> _changeLocation() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+      });
+      // Optionally persist to database if user is logged in
+      if (Session.userId != null) {
+        try {
+          await Api.put('/auth/customer/profile/${Session.userId}', {
+            'name': Session.name ?? 'User',
+            'email': Session.email ?? '',
+            'phone': Session.phone ?? '',
+            'address': result.address,
+          });
+        } catch (_) {}
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final displayAddress = (Session.address != null && Session.address!.isNotEmpty)
+        ? (Session.address!.length > 25 ? '${Session.address!.substring(0, 22)}...' : Session.address!)
+        : 'Bengaluru, KA';
+
     return Container(
       decoration: const BoxDecoration(gradient: AppColors.heroGradient),
       padding: EdgeInsets.only(
@@ -265,20 +306,27 @@ class _HomeHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on_rounded,
-                            color: Colors.white70, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Bengaluru, KA',
-                          style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: 12),
-                        ),
-                        const Icon(Icons.keyboard_arrow_down_rounded,
-                            color: Colors.white70, size: 18),
-                      ],
+                    InkWell(
+                      onTap: _changeLocation,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.location_on_rounded,
+                              color: Colors.white70, size: 14),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              displayAddress,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 12),
+                            ),
+                          ),
+                          const Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Colors.white70, size: 18),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(

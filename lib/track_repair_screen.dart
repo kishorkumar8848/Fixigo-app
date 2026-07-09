@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'api.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 
 class TrackRepairScreen extends StatefulWidget {
   final Map<String, dynamic> booking;
@@ -383,7 +386,6 @@ class _MapPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = booking['status'] ?? 'pending';
-    final hasTech = booking['technician_name'] != null;
 
     String eta = 'Finding Technician...';
     if (status == 'assigned') {
@@ -392,106 +394,116 @@ class _MapPlaceholder extends StatelessWidget {
       eta = 'Ongoing Service';
     } else if (status == 'pending') {
       eta = 'Scheduling...';
+    } else if (status == 'completed') {
+      eta = 'Service Completed';
     }
+
+    final double custLat = double.tryParse(booking['latitude']?.toString() ?? '') ?? 12.971598;
+    final double custLon = double.tryParse(booking['longitude']?.toString() ?? '') ?? 77.594562;
+    final custPoint = LatLng(custLat, custLon);
+
+    final double? techLat = double.tryParse(booking['technician_latitude']?.toString() ?? '');
+    final double? techLon = double.tryParse(booking['technician_longitude']?.toString() ?? '');
+
+    final LatLng centerPoint;
+    final double distance;
+    if (techLat != null && techLon != null) {
+      centerPoint = LatLng((custLat + techLat) / 2, (custLon + techLon) / 2);
+      final double distanceInMeters = Geolocator.distanceBetween(custLat, custLon, techLat, techLon);
+      distance = distanceInMeters / 1000.0;
+    } else {
+      centerPoint = custPoint;
+      distance = 0.0;
+    }
+
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('customer'),
+        position: custPoint,
+        infoWindow: const InfoWindow(title: 'My House'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+      ),
+      if (techLat != null && techLon != null)
+        Marker(
+          markerId: const MarkerId('technician'),
+          position: LatLng(techLat, techLon),
+          infoWindow: const InfoWindow(title: 'Technician'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        ),
+    };
+
+    final Set<Polyline> polylines = {
+      if (techLat != null && techLon != null)
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: [custPoint, LatLng(techLat, techLon)],
+          color: AppColors.primary,
+          width: 4,
+        ),
+    };
 
     return Container(
       height: 200,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8EFF7),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          CustomPaint(
-            size: const Size(double.infinity, 200),
-            painter: _MapGridPainter(),
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: centerPoint,
+              zoom: techLat != null ? 12.0 : 14.0,
+            ),
+            markers: markers,
+            polylines: polylines,
+            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
           ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.electric_moped_rounded,
-                          color: Colors.white, size: 18),
-                      const SizedBox(width: 8),
-                      Text(eta,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-                if (hasTech && status == 'assigned') ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text('1.2 km away',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary)),
-                  ),
-                ],
-              ],
+          Positioned(
+            top: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                techLat != null
+                    ? '${distance.toStringAsFixed(1)} km away • $eta'
+                    : eta,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              ),
             ),
           ),
-          const Positioned(
-            bottom: 24,
-            right: 40,
-            child: Icon(Icons.home_rounded, color: AppColors.primary, size: 28),
-          ),
-          if (hasTech && status == 'assigned')
-            const Positioned(
-              top: 40,
-              left: 60,
-              child: Icon(Icons.engineering_rounded,
-                  color: AppColors.secondary, size: 28),
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: FloatingActionButton.small(
+              heroTag: 'view_in_google_maps_customer',
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.primary,
+              onPressed: () async {
+                final url = 'https://www.google.com/maps/search/?api=1&query=$custLat,$custLon';
+                final uri = Uri.parse(url);
+                try {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not open maps: $e')),
+                  );
+                }
+              },
+              tooltip: 'View on Google Maps',
+              child: const Icon(Icons.navigation_rounded, size: 20),
             ),
+          ),
         ],
       ),
     );
   }
-}
-
-class _MapGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFD0DCE8)
-      ..strokeWidth = 1;
-
-    for (double x = 0; x < size.width; x += 40) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += 40) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 
 class _JobInfoCard extends StatelessWidget {

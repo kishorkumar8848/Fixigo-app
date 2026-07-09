@@ -7,6 +7,8 @@ import 'common_widgets.dart';
 import 'api.dart';
 import 'session.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'location_picker_screen.dart';
+
 
 class BookServiceScreen extends StatefulWidget {
   final String? initialCategory;
@@ -102,6 +104,34 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
     return null;
   }
 
+  Future<void> _chooseLocationOnMap() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+      });
+      try {
+        await Api.put('/auth/customer/profile/${Session.userId}', {
+          'name': Session.name ?? 'User',
+          'email': Session.email ?? '',
+          'phone': Session.phone ?? '',
+          'address': result.address,
+        });
+      } catch (_) {}
+    }
+  }
+
   Future<void> _createBooking() async {
     setState(() => _isBooking = true);
 
@@ -139,15 +169,20 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
         paymentUrl = paymentUrl.replaceAll('http://127.0.0.1:3000', Api.baseUrl);
       }
 
+      // Upgrade cleartext http to https if using a secure production backend
+      if (Api.baseUrl.startsWith('https://') && paymentUrl.startsWith('http://')) {
+        paymentUrl = paymentUrl.replaceFirst('http://', 'https://');
+      }
+
       if (paymentUrl.isEmpty) {
         throw 'Payment URL is empty';
       }
 
       final uri = Uri.parse(paymentUrl);
-      if (await canLaunchUrl(uri)) {
+      try {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        throw 'Could not launch payment gateway URL';
+      } catch (e) {
+        throw 'Could not launch payment gateway URL: $e';
       }
 
       if (!mounted) return;
@@ -644,6 +679,7 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
                   issue: _selectedIssue != null ? _issues[_selectedIssue!] : '',
                   slot: _selectedSlot ?? '',
                   date: _selectedDate,
+                  onSelectLocation: _chooseLocationOnMap,
                 ),
               ][_step],
             ),
@@ -1337,6 +1373,7 @@ class _StepSelectSlotState extends State<_StepSelectSlot> {
 class _StepConfirm extends StatelessWidget {
   final String appliance, issue, slot;
   final DateTime date;
+  final VoidCallback onSelectLocation;
 
   const _StepConfirm({
     super.key,
@@ -1344,6 +1381,7 @@ class _StepConfirm extends StatelessWidget {
     required this.issue,
     required this.slot,
     required this.date,
+    required this.onSelectLocation,
   });
 
   @override
@@ -1399,12 +1437,48 @@ class _StepConfirm extends StatelessWidget {
                 InfoRow(
                     icon: Icons.schedule_rounded, label: 'Slot', value: slot),
                 const Divider(),
-                InfoRow(
-                    icon: Icons.location_on_rounded,
-                    label: 'Address',
-                    value: Session.address != null && Session.address!.isNotEmpty
-                        ? Session.address!
-                        : '42, 3rd Cross, Indiranagar, Bengaluru'),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: onSelectLocation,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySurface.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Service Address (Tap to change)',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 4),
+                              Text(
+                                Session.address != null && Session.address!.isNotEmpty
+                                    ? Session.address!
+                                    : 'Tap to select address on Google Maps',
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

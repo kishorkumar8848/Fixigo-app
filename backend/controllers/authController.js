@@ -285,9 +285,10 @@ exports.getCustomerProfile = async (req, res) => {
     );
 
     // Active warranties is count of completed bookings in the last 90 days
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const activeWarrantiesRes = await pool.query(
-      "SELECT COUNT(*) FROM bookings WHERE customer_id = $1 AND status = 'completed' AND updated_at >= datetime('now', '-90 days')",
-      [customerId]
+      "SELECT COUNT(*) FROM bookings WHERE customer_id = $1 AND status = 'completed' AND updated_at >= $2",
+      [customerId, ninetyDaysAgo]
     );
 
     // Appliances sold is count of resale requests with status 'sold'

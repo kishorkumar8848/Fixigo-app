@@ -5,6 +5,7 @@ import 'user_main_screen.dart';
 import 'role_selection.dart';
 import 'api.dart';
 import 'session.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class CustomerAuthScreen extends StatefulWidget {
   const CustomerAuthScreen({super.key});
@@ -31,6 +32,10 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   final _signupAddressController = TextEditingController();
   final _signupPasswordController = TextEditingController();
   bool _signupLoading = false;
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+  );
 
   @override
   void initState() {
@@ -217,113 +222,26 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   }
 
   Future<void> _handleGoogleSignIn() async {
-    final signupName = _signupNameController.text.trim();
-    final signupEmail = _signupEmailController.text.trim();
-    final loginEmail = _loginEmailController.text.trim();
-    
-    final displayEmail = signupEmail.isNotEmpty 
-        ? signupEmail 
-        : (loginEmail.isNotEmpty ? loginEmail : 'kishor80720@gmail.com');
-    final displayName = signupName.isNotEmpty ? signupName : 'Kishor Kumar';
-    final initialLetter = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'G';
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  const GoogleLogoWidget(size: 24),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Sign in with Google',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'to continue to Fixigo',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.primary,
-                  child: Text(
-                    initialLetter,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                title: Text(
-                  displayName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                ),
-                subtitle: Text(
-                  displayEmail,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _executeGoogleLogin(displayEmail, displayName);
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.grey[200],
-                  child: Icon(Icons.add, color: Colors.grey[700]),
-                ),
-                title: Text(
-                  'Use another account',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showNewGoogleAccountDialog();
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
+    try {
+      // Trigger the native Google Account chooser dialog
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser != null) {
+        final String email = googleUser.email;
+        final String displayName = googleUser.displayName ?? googleUser.email.split('@')[0];
+        
+        await _executeGoogleLogin(email, displayName);
+      }
+    } catch (error) {
+      // If native sign-in is not configured or fails, we fall back to the account entry dialog
+      // so it works in debug emulators without manual Firebase config.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Native Google Sign-In failed: $error. Falling back to account selection.'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      _showNewGoogleAccountDialog();
+    }
   }
 
   void _showNewGoogleAccountDialog() {
@@ -534,6 +452,8 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
                     indicator: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),

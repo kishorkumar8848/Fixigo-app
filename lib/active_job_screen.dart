@@ -3,8 +3,9 @@ import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'api.dart';
 import 'session.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ActiveJobScreen extends StatefulWidget {
   const ActiveJobScreen({super.key});
@@ -227,7 +228,32 @@ class _ActiveJobScreenState extends State<ActiveJobScreen> {
     final custPoint = LatLng(custLat, custLon);
     final centerLat = (techLat + custLat) / 2;
     final centerLon = (techLon + custLon) / 2;
-    final distance = const Distance().as(LengthUnit.Kilometer, techPoint, custPoint);
+    final double distanceInMeters = Geolocator.distanceBetween(techLat, techLon, custLat, custLon);
+    final double distance = distanceInMeters / 1000.0;
+
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('technician'),
+        position: techPoint,
+        infoWindow: const InfoWindow(title: 'My Location'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+      Marker(
+        markerId: const MarkerId('customer'),
+        position: custPoint,
+        infoWindow: const InfoWindow(title: 'Customer Location'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+      ),
+    };
+
+    final Set<Polyline> polylines = {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: [techPoint, custPoint],
+        color: AppColors.primary,
+        width: 4,
+      ),
+    };
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -267,56 +293,15 @@ class _ActiveJobScreenState extends State<ActiveJobScreen> {
                   clipBehavior: Clip.antiAlias,
                   child: Stack(
                     children: [
-                      FlutterMap(
-                        options: MapOptions(
-                          initialCenter: LatLng(centerLat, centerLon),
-                          initialZoom: 12.0,
+                      GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: LatLng(centerLat, centerLon),
+                          zoom: 12.0,
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.fixigo.app',
-                          ),
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: [techPoint, custPoint],
-                                color: AppColors.primary,
-                                strokeWidth: 4.0,
-                              ),
-                            ],
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: techPoint,
-                                width: 40,
-                                height: 40,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.secondary,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.engineering_rounded, color: Colors.white, size: 20),
-                                ),
-                              ),
-                              Marker(
-                                point: custPoint,
-                                width: 40,
-                                height: 40,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.error,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.person_pin_circle_rounded, color: Colors.white, size: 20),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                        markers: markers,
+                        polylines: polylines,
+                        zoomControlsEnabled: false,
+                        myLocationButtonEnabled: false,
                       ),
                       Positioned(
                         top: 12,
@@ -331,6 +316,28 @@ class _ActiveJobScreenState extends State<ActiveJobScreen> {
                             'Distance: ${distance.toStringAsFixed(1)} km',
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 12,
+                        right: 12,
+                        child: FloatingActionButton.small(
+                          heroTag: 'view_in_google_maps_tech',
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primary,
+                          onPressed: () async {
+                            final url = 'https://www.google.com/maps/dir/?api=1&origin=$techLat,$techLon&destination=$custLat,$custLon&travelmode=driving';
+                            final uri = Uri.parse(url);
+                            try {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Could not open maps: $e')),
+                              );
+                            }
+                          },
+                          tooltip: 'Start Navigation',
+                          child: const Icon(Icons.navigation_rounded, size: 20),
                         ),
                       ),
                     ],

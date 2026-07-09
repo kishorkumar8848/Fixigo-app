@@ -5,6 +5,7 @@ import 'common_widgets.dart';
 import 'resale_valuation_engine.dart';
 import 'resell_schedule_screen.dart';
 import 'session.dart';
+import 'location_picker_screen.dart';
 
 class ResellScreen extends StatefulWidget {
   const ResellScreen({super.key});
@@ -85,6 +86,28 @@ class _ResellScreenState extends State<ResellScreen> {
       );
       _validateLocation();
     });
+  }
+
+  Future<void> _selectLocationOnMap() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _locationController.text = result.address;
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+        _validateLocation();
+      });
+    }
   }
 
   void _calculateValuation() {
@@ -236,6 +259,11 @@ class _ResellScreenState extends State<ResellScreen> {
                 labelText: 'Enter your location',
                 hintText: 'e.g. Chennai, Anna Nagar',
                 prefixIcon: const Icon(Icons.location_on_rounded),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.map_rounded, color: AppColors.primary),
+                  onPressed: _selectLocationOnMap,
+                  tooltip: 'Select on Google Maps',
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

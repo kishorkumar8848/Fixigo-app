@@ -3,8 +3,9 @@ import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'api.dart';
 import 'session.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class JobRequestsScreen extends StatefulWidget {
   const JobRequestsScreen({super.key});
@@ -117,7 +118,32 @@ class _JobRequestsScreenState extends State<JobRequestsScreen>
     final custPoint = LatLng(custLat, custLon);
     final centerLat = (techLat + custLat) / 2;
     final centerLon = (techLon + custLon) / 2;
-    final distance = const Distance().as(LengthUnit.Kilometer, techPoint, custPoint);
+    final double distanceInMeters = Geolocator.distanceBetween(techLat, techLon, custLat, custLon);
+    final double distance = distanceInMeters / 1000.0;
+
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('technician'),
+        position: techPoint,
+        infoWindow: const InfoWindow(title: 'My Position'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+      Marker(
+        markerId: const MarkerId('customer'),
+        position: custPoint,
+        infoWindow: const InfoWindow(title: 'Customer Home'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+      ),
+    };
+
+    final Set<Polyline> polylines = {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: [techPoint, custPoint],
+        color: AppColors.primary,
+        width: 4,
+      ),
+    };
 
     return Container(
       height: 450,
@@ -128,56 +154,15 @@ class _JobRequestsScreenState extends State<JobRequestsScreen>
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: LatLng(centerLat, centerLon),
-              initialZoom: 12.0,
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: LatLng(centerLat, centerLon),
+              zoom: 12.0,
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.fixigo.app',
-              ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: [techPoint, custPoint],
-                    color: AppColors.primary,
-                    strokeWidth: 4.0,
-                  ),
-                ],
-              ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: techPoint,
-                    width: 45,
-                    height: 45,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.secondary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(Icons.engineering_rounded, color: Colors.white, size: 22),
-                    ),
-                  ),
-                  Marker(
-                    point: custPoint,
-                    width: 45,
-                    height: 45,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(Icons.person_pin_circle_rounded, color: Colors.white, size: 24),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            markers: markers,
+            polylines: polylines,
+            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
           ),
           Positioned(
             top: 16,
@@ -209,6 +194,28 @@ class _JobRequestsScreenState extends State<JobRequestsScreen>
                 icon: const Icon(Icons.close_rounded, color: Colors.black87),
                 onPressed: () => Navigator.pop(context),
               ),
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: FloatingActionButton(
+              heroTag: 'view_in_google_maps_request',
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.primary,
+              onPressed: () async {
+                final url = 'https://www.google.com/maps/dir/?api=1&origin=$techLat,$techLon&destination=$custLat,$custLon&travelmode=driving';
+                final uri = Uri.parse(url);
+                try {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not open maps: $e')),
+                  );
+                }
+              },
+              tooltip: 'Start Navigation',
+              child: const Icon(Icons.navigation_rounded),
             ),
           ),
         ],
@@ -354,7 +361,8 @@ class _NewJobsList extends StatelessWidget {
         final double custLon = double.tryParse(job['customer_longitude']?.toString() ?? '') ?? 77.594562;
         final double techLat = Session.latitude ?? 12.971598;
         final double techLon = Session.longitude ?? 77.594562;
-        final double dist = const Distance().as(LengthUnit.Kilometer, LatLng(techLat, techLon), LatLng(custLat, custLon));
+        final double distanceInMeters = Geolocator.distanceBetween(techLat, techLon, custLat, custLon);
+        final double dist = distanceInMeters / 1000.0;
 
         return _JobRequestCard(
           job: job,

@@ -5,7 +5,7 @@ import 'resell_schedule_screen.dart';
 import 'role_selection.dart';
 import 'session.dart';
 import 'api.dart';
-
+import 'location_picker_screen.dart';
 class ProfileScreen extends StatefulWidget {
   final Function(int)? onTabChanged;
 
@@ -194,66 +194,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _requestAndFetchLocation(TextEditingController controller) async {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.location_on_rounded, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Location Permission'),
-          ],
-        ),
-        content: const Text(
-          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Deny'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showLocationFetchingProgress(controller);
-            },
-            child: const Text('Allow'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLocationFetchingProgress(TextEditingController controller) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Expanded(child: Text('Fetching current GPS coordinates...')),
-          ],
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
         ),
       ),
     );
 
-    Future.delayed(const Duration(seconds: 1), () {
-      Navigator.pop(context);
-      final neighborhoods = [
-        'Indiranagar, Bengaluru',
-        'Koramangala, Bengaluru',
-        'HSR Layout, Bengaluru',
-        'Jayanagar, Bengaluru',
-        'Whitefield, Bengaluru',
-      ];
-      final randomNeighborhood = neighborhoods[DateTime.now().millisecond % neighborhoods.length];
-      controller.text = randomNeighborhood;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auto-filled current location: $randomNeighborhood')),
-      );
-    });
+    if (result != null) {
+      setState(() {
+        controller.text = result.address;
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+      });
+    }
   }
 
   @override

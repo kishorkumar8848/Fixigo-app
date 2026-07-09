@@ -334,6 +334,8 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
                     indicator: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),

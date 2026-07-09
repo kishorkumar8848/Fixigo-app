@@ -222,7 +222,7 @@ exports.getBookingDetails = async (req, res) => {
     const bookingId = req.params.bookingId;
 
     const result = await pool.query(
-      `SELECT b.*, t.name as technician_name, t.phone as technician_phone, t.rating
+      `SELECT b.*, t.name as technician_name, t.phone as technician_phone, t.rating, t.latitude as technician_latitude, t.longitude as technician_longitude
        FROM bookings b
        LEFT JOIN technicians t ON b.technician_id = t.id
        WHERE b.id = $1`,
@@ -252,7 +252,7 @@ exports.cancelBooking = async (req, res) => {
     // Update booking status to cancelled and write cancellation reason
     const bookingRes = await pool.query(
       `UPDATE bookings 
-       SET status = 'cancelled', cancellation_reason = $1, updated_at = datetime('now') 
+       SET status = 'cancelled', cancellation_reason = $1, updated_at = CURRENT_TIMESTAMP 
        WHERE id = $2 RETURNING *`,
       [reason, bookingId]
     );
@@ -264,7 +264,7 @@ exports.cancelBooking = async (req, res) => {
     // Also update associated jobs status to cancelled
     await pool.query(
       `UPDATE jobs 
-       SET status = 'cancelled', updated_at = datetime('now') 
+       SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
        WHERE booking_id = $1`,
       [bookingId]
     );
@@ -401,8 +401,10 @@ exports.initiateBooking = async (req, res) => {
     let paymentUrl = '';
     let razorpayOrderId = '';
 
+    const protocol = (req.headers.host && (req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1'))) ? 'http' : 'https';
+
     if (isMock) {
-      paymentUrl = `http://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
+      paymentUrl = `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
       razorpayOrderId = `order_mock_${bookingId}_${Date.now().toString().slice(-4)}`;
     } else {
       const razorpay = require('../config/razorpay');
@@ -422,14 +424,14 @@ exports.initiateBooking = async (req, res) => {
             sms: false,
             email: false
           },
-          callback_url: `http://${req.headers.host || 'localhost:3000'}/bookings/payment-callback?booking_id=${bookingId}`,
+          callback_url: `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/payment-callback?booking_id=${bookingId}`,
           callback_method: "get"
         });
         paymentUrl = paymentLink.short_url;
         razorpayOrderId = paymentLink.order_id || `order_${paymentLink.id}`;
       } catch (err) {
         console.error('Razorpay API error, falling back to mock:', err.message);
-        paymentUrl = `http://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
+        paymentUrl = `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
         razorpayOrderId = `order_mock_${bookingId}_${Date.now().toString().slice(-4)}`;
       }
     }
@@ -477,7 +479,7 @@ exports.handlePaymentCallback = async (req, res) => {
         // 2. Update payment status and booking status
         await pool.query(
           `UPDATE bookings 
-           SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, updated_at = datetime('now') 
+           SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, updated_at = CURRENT_TIMESTAMP 
            WHERE id = $2`,
           [razorpay_payment_id || `pay_${Date.now()}`, booking_id]
         );
@@ -603,7 +605,7 @@ exports.verifyPaymentSignature = async (req, res) => {
     if (razorpay_payment_id.startsWith('pay_mock_')) {
       await pool.query(
         `UPDATE bookings 
-         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = datetime('now') 
+         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = CURRENT_TIMESTAMP 
          WHERE id = $3`,
         [razorpay_payment_id, razorpay_order_id, bookingId]
       );
@@ -618,7 +620,7 @@ exports.verifyPaymentSignature = async (req, res) => {
     if (generated_signature === razorpay_signature) {
       await pool.query(
         `UPDATE bookings 
-         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = datetime('now') 
+         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = CURRENT_TIMESTAMP 
          WHERE id = $3`,
         [razorpay_payment_id, razorpay_order_id, bookingId]
       );
