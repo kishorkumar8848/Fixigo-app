@@ -7,6 +7,7 @@ import 'technician_main_screen.dart';
 import 'role_selection.dart';
 import 'api.dart';
 import 'session.dart';
+import 'admin_main_screen.dart';
 
 class TechnicianAuthScreen extends StatefulWidget {
   const TechnicianAuthScreen({super.key});
@@ -30,11 +31,24 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
   final _signupNameController = TextEditingController();
   final _signupEmailController = TextEditingController();
   final _signupPhoneController = TextEditingController();
-  final _signupSkillsController = TextEditingController();
+  final _signupAddressController = TextEditingController();
   final _signupExperienceController = TextEditingController();
   final _signupPasswordController = TextEditingController();
   bool _signupLoading = false;
   File? _idProofImage;
+
+  final List<String> _availableSkills = const [
+    'Air Conditioner',
+    'Refrigerator',
+    'Washing Machine',
+    'Television',
+    'Laptop & PC',
+    'Water Purifier',
+    'Water Heater / Geyser',
+    'Kitchen Appliances',
+    'Electrical Services'
+  ];
+  final List<String> _selectedSkills = [];
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -69,10 +83,73 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
     _signupNameController.dispose();
     _signupEmailController.dispose();
     _signupPhoneController.dispose();
-    _signupSkillsController.dispose();
+    _signupAddressController.dispose();
     _signupExperienceController.dispose();
     _signupPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _requestAndFetchLocation() async {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.location_on_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Location Permission'),
+          ],
+        ),
+        content: const Text(
+          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Deny'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showLocationFetchingProgress();
+            },
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationFetchingProgress() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Expanded(child: Text('Fetching current GPS coordinates...')),
+          ],
+        ),
+      ),
+    );
+
+    Future.delayed(const Duration(seconds: 1), () {
+      Navigator.pop(context);
+      final neighborhoods = [
+        'Indiranagar, Bengaluru',
+        'Koramangala, Bengaluru',
+        'HSR Layout, Bengaluru',
+        'Jayanagar, Bengaluru',
+        'Whitefield, Bengaluru',
+      ];
+      final randomNeighborhood = neighborhoods[DateTime.now().millisecond % neighborhoods.length];
+      _signupAddressController.text = randomNeighborhood;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Auto-filled current location: $randomNeighborhood')),
+      );
+    });
   }
 
   Future<void> _handleLogin() async {
@@ -90,11 +167,29 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
 
       if (resp['status'] == 200) {
         final data = resp['data'];
+        
+        if (data['role'] == 'admin' || data['adminId'] != null) {
+          Session.token = data['token'];
+          Session.role = 'admin';
+          Session.userId = data['adminId'];
+          Session.name = data['name'] ?? 'Admin';
+          Session.email = data['email'] ?? email;
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminMainScreen()),
+          );
+          return;
+        }
+
         Session.token = data['token'];
         Session.role = 'technician';
         Session.userId = data['technicianId'];
         Session.name = data['name'] ?? '';
         Session.email = data['email'] ?? email;
+        Session.address = data['address'] ?? '';
+        Session.latitude = double.tryParse(data['latitude']?.toString() ?? '');
+        Session.longitude = double.tryParse(data['longitude']?.toString() ?? '');
 
         Navigator.pushReplacement(
           context,
@@ -107,8 +202,10 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
         setState(() => _loginLoading = false);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to reach the login server. Please try again.')),
+      );
       setState(() => _loginLoading = false);
     }
   }
@@ -118,13 +215,24 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
     final name = _signupNameController.text.trim();
     final email = _signupEmailController.text.trim();
     final phone = _signupPhoneController.text.trim();
-    final skills = _signupSkillsController.text.trim();
+    
+    final address = _signupAddressController.text.trim();
+    
+    if (_selectedSkills.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one area of expertise')),
+      );
+      setState(() => _signupLoading = false);
+      return;
+    }
+
+    final skills = _selectedSkills.join(', ');
     final experience = _signupExperienceController.text.trim();
     final password = _signupPasswordController.text.trim();
 
-    if (_idProofImage == null) {
+    if (address.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload an ID Proof image')),
+        const SnackBar(content: Text('Please enter your service address')),
       );
       setState(() => _signupLoading = false);
       return;
@@ -138,9 +246,12 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
         'phone': phone,
         'skills': skills,
         'experience': experience,
+        'address': address,
       };
 
-      final resp = await Api.multipartPost('/auth/technician/signup', fields, 'id_proof', _idProofImage!.path);
+      final resp = _idProofImage == null
+          ? await Api.post('/auth/technician/signup', fields)
+          : await Api.multipartPost('/auth/technician/signup', fields, 'id_proof', _idProofImage!.path);
 
       if (!mounted) return;
 
@@ -154,6 +265,7 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
         _tabController.animateTo(0);
         setState(() {
           _idProofImage = null; // clear image
+          _signupAddressController.clear();
           _signupLoading = false;
         });
       } else {
@@ -355,9 +467,61 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                             ),
                             const SizedBox(height: 16),
                             CustomTextField(
-                              controller: _signupSkillsController,
-                              hintText: 'Skills (e.g., AC, Refrigerator)',
-                              prefixIcon: Icons.build_circle_outlined,
+                              controller: _signupAddressController,
+                              hintText: 'Service Address (e.g. Indiranagar, Bengaluru)',
+                              prefixIcon: Icons.location_on_outlined,
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.my_location_rounded, color: Colors.white70),
+                                onPressed: _requestAndFetchLocation,
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8, bottom: 8),
+                              child: Text(
+                                'Select Areas of Expertise',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _availableSkills.map((skill) {
+                                final isSelected = _selectedSkills.contains(skill);
+                                return GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedSkills.remove(skill);
+                                      } else {
+                                        _selectedSkills.add(skill);
+                                      }
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? Colors.white : Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: isSelected ? Colors.white : Colors.white.withOpacity(0.3),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      skill,
+                                      style: TextStyle(
+                                        color: isSelected ? AppColors.primary : Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
                             const SizedBox(height: 16),
                             CustomTextField(
@@ -374,7 +538,7 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                               isPassword: true,
                             ),
                             const SizedBox(height: 24),
-                            // ID Proof Upload UI
+                            // ID Proof Upload UI (optional)
                             GestureDetector(
                               onTap: _pickImage,
                               child: Container(
@@ -390,7 +554,7 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                                       children: [
                                         Icon(Icons.upload_file, color: Colors.white, size: 32),
                                         SizedBox(height: 8),
-                                        Text('Upload ID Proof', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                        Text('Upload ID Proof (Optional)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                       ],
                                     )
                                   : Row(

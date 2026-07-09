@@ -3,9 +3,66 @@ import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'track_repair_screen.dart';
 import 'session.dart';
+import 'api.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  final ValueChanged<String>? onCategorySelected;
+  final Function(String, String)? onPopularSelected;
+
+  const HomeScreen({
+    super.key,
+    this.onCategorySelected,
+    this.onPopularSelected,
+  });
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Map<String, dynamic>? _activeBooking;
+  bool _isLoadingBooking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchActiveBooking();
+  }
+
+  Future<void> _fetchActiveBooking() async {
+    if (Session.userId == null) {
+      if (mounted) {
+        setState(() => _isLoadingBooking = false);
+      }
+      return;
+    }
+    try {
+      final resp = await Api.get('/bookings/user/${Session.userId}');
+      if (resp['status'] == 200 && resp['data'] is List) {
+        final List bookings = resp['data'];
+        // Find first active booking (status is not completed or cancelled)
+        final active = bookings.firstWhere(
+          (b) => b['status'] != 'completed' && b['status'] != 'cancelled',
+          orElse: () => null,
+        );
+        if (mounted) {
+          setState(() {
+            _activeBooking = active;
+            _isLoadingBooking = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() => _isLoadingBooking = false);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingBooking = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,22 +80,28 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           // ── Active booking banner ───────────────────────────────────────────
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            sliver: SliverToBoxAdapter(
-              child: _ActiveBookingBanner(context),
+          if (!_isLoadingBooking && _activeBooking != null)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              sliver: SliverToBoxAdapter(
+                child: _ActiveBookingBanner(context, _activeBooking!),
+              ),
             ),
-          ),
           // ── Categories ─────────────────────────────────────────────────────
           SliverPadding(
             padding: const EdgeInsets.only(top: 24),
             sliver: SliverToBoxAdapter(
               child: Column(
                 children: [
-                  const SectionHeader(
-                      title: 'Our Services', actionText: 'View all'),
+                  SectionHeader(
+                    title: 'Our Services',
+                    actionText: 'View all',
+                    onAction: () => widget.onCategorySelected?.call('More'),
+                  ),
                   const SizedBox(height: 16),
-                  _ServiceCategories(),
+                  _ServiceCategories(
+                    onCategorySelected: (cat) => widget.onCategorySelected?.call(cat),
+                  ),
                 ],
               ),
             ),
@@ -51,7 +114,9 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   const SectionHeader(title: 'Popular Repairs'),
                   const SizedBox(height: 16),
-                  _PopularRepairs(),
+                  _PopularRepairs(
+                    onPopularSelected: (cat, issue) => widget.onPopularSelected?.call(cat, issue),
+                  ),
                 ],
               ),
             ),
@@ -59,7 +124,12 @@ class HomeScreen extends StatelessWidget {
           // ── Promo Banner ────────────────────────────────────────────────────
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
-            sliver: SliverToBoxAdapter(child: _PromoBanner()),
+            sliver: SliverToBoxAdapter(
+              child: GestureDetector(
+                onTap: () => widget.onCategorySelected?.call('More'),
+                child: _PromoBanner(),
+              ),
+            ),
           ),
           // ── How it works ────────────────────────────────────────────────────
           SliverPadding(
@@ -80,10 +150,28 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _ActiveBookingBanner(BuildContext context) {
+  Widget _ActiveBookingBanner(BuildContext context, Map<String, dynamic> booking) {
+    final techName = booking['technician_name'] ?? 'Assigning Technician...';
+    final status = booking['status'] ?? 'pending';
+
+    String statusInfo = '';
+    if (status == 'pending') {
+      statusInfo = 'Awaiting technician assignment';
+    } else if (status == 'assigned') {
+      statusInfo = 'Technician assigned • ETA 30 mins';
+    } else if (status == 'in_progress') {
+      statusInfo = 'Service in progress';
+    } else {
+      statusInfo = status;
+    }
+
     return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const TrackRepairScreen())),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TrackRepairScreen(booking: booking),
+        ),
+      ).then((_) => _fetchActiveBooking()),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -117,17 +205,23 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Technician On the Way!',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14)),
+                  Text(
+                    status == 'pending' ? 'Booking Confirmed!' : 'Technician On the Way!',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text('Rajesh Kumar • ETA 15 mins',
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400)),
+                  Text(
+                    techName == 'Assigning Technician...' ? statusInfo : '$techName • $statusInfo',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -293,16 +387,59 @@ class _SearchBar extends StatelessWidget {
 
 // ── Service Categories ────────────────────────────────────────────────────────
 class _ServiceCategories extends StatelessWidget {
+  final ValueChanged<String>? onCategorySelected;
+
+  const _ServiceCategories({this.onCategorySelected});
+
   final _cats = const [
-    _Cat('AC Repair', Icons.ac_unit_rounded, Color(0xFF1565C0)),
-    _Cat('Washing\nMachine', Icons.local_laundry_service_rounded,
-        Color(0xFF00897B)),
-    _Cat('Refrigerator', Icons.kitchen_rounded, Color(0xFF6A1B9A)),
-    _Cat('Microwave', Icons.microwave_rounded, Color(0xFFE65100)),
-    _Cat('TV Repair', Icons.tv_rounded, Color(0xFF0277BD)),
-    _Cat('Water\nPurifier', Icons.water_drop_rounded, Color(0xFF2E7D32)),
-    _Cat('Geyser', Icons.water_rounded, Color(0xFFC62828)),
-    _Cat('More', Icons.grid_view_rounded, Color(0xFF546E7A)),
+    _Cat(
+      'AC Repair',
+      Icons.ac_unit_rounded,
+      Color(0xFF1565C0),
+      'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'Washing\nMachine',
+      Icons.local_laundry_service_rounded,
+      Color(0xFF00897B),
+      'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'Refrigerator',
+      Icons.kitchen_rounded,
+      Color(0xFF6A1B9A),
+      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'Microwave',
+      Icons.microwave_rounded,
+      Color(0xFFE65100),
+      'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'TV Repair',
+      Icons.tv_rounded,
+      Color(0xFF0277BD),
+      'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'Water\nPurifier',
+      Icons.water_drop_rounded,
+      Color(0xFF2E7D32),
+      'https://images.unsplash.com/photo-1618579895756-65b827ac4f53?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'Geyser',
+      Icons.water_rounded,
+      Color(0xFFC62828),
+      'https://images.unsplash.com/photo-1584622781564-1d987f7333c1?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Cat(
+      'More',
+      Icons.grid_view_rounded,
+      Color(0xFF546E7A),
+      'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=500&auto=format&fit=crop&q=60',
+    ),
   ];
 
   @override
@@ -316,30 +453,50 @@ class _ServiceCategories extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (ctx, i) {
           final cat = _cats[i];
-          return Column(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: cat.color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: cat.color.withOpacity(0.2)),
+          return GestureDetector(
+            onTap: () => onCategorySelected?.call(cat.label.replaceAll('\n', ' ')),
+            child: Column(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: cat.color.withOpacity(0.2)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: CachedNetworkImage(
+                      imageUrl: cat.imageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (ctx, url) => Container(
+                        color: cat.color.withOpacity(0.1),
+                        child: Center(
+                          child: Icon(cat.icon, color: cat.color, size: 24),
+                        ),
+                      ),
+                      errorWidget: (ctx, url, err) => Container(
+                        color: cat.color.withOpacity(0.1),
+                        child: Center(
+                          child: Icon(cat.icon, color: cat.color, size: 24),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                child: Icon(cat.icon, color: cat.color, size: 28),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                cat.label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                  height: 1.2,
+                const SizedBox(height: 6),
+                Text(
+                  cat.label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    height: 1.2,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -351,18 +508,47 @@ class _Cat {
   final String label;
   final IconData icon;
   final Color color;
-  const _Cat(this.label, this.icon, this.color);
+  final String imageUrl;
+  const _Cat(this.label, this.icon, this.color, this.imageUrl);
 }
 
 // ── Popular Repairs ───────────────────────────────────────────────────────────
 class _PopularRepairs extends StatelessWidget {
+  final Function(String, String)? onPopularSelected;
+
+  const _PopularRepairs({this.onPopularSelected});
+
   final _repairs = const [
-    _Repair('AC Gas Refill', 'AC & Air Coolers', '₹499', Icons.ac_unit_rounded,
-        Color(0xFF1565C0), '45 min', 4.8),
-    _Repair('Washing Machine\nService', 'Washing Machines', '₹349',
-        Icons.local_laundry_service_rounded, Color(0xFF00897B), '60 min', 4.7),
-    _Repair('Refrigerator\nCooling Fix', 'Refrigerators', '₹599',
-        Icons.kitchen_rounded, Color(0xFF6A1B9A), '90 min', 4.9),
+    _Repair(
+      'AC Gas Refill',
+      'AC & Air Coolers',
+      '₹499',
+      Icons.ac_unit_rounded,
+      Color(0xFF1565C0),
+      '45 min',
+      4.8,
+      'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Repair(
+      'Washing Machine\nService',
+      'Washing Machines',
+      '₹349',
+      Icons.local_laundry_service_rounded,
+      Color(0xFF00897B),
+      '60 min',
+      4.7,
+      'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
+    ),
+    _Repair(
+      'Refrigerator\nCooling Fix',
+      'Refrigerators',
+      '₹599',
+      Icons.kitchen_rounded,
+      Color(0xFF6A1B9A),
+      '90 min',
+      4.9,
+      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
+    ),
   ];
 
   @override
@@ -376,104 +562,130 @@ class _PopularRepairs extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (ctx, i) {
           final r = _repairs[i];
-          return Container(
-            width: 180,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: r.color.withOpacity(0.1),
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(15)),
+          return GestureDetector(
+            onTap: () => onPopularSelected?.call(r.category, r.name.replaceAll('\n', ' ')),
+            child: Container(
+              width: 180,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                  child: Row(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Icon(r.icon, color: r.color, size: 36),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 12, top: 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.successLight,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'Starts ${r.price}',
-                                  style: const TextStyle(
-                                    color: AppColors.success,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 80,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                            child: CachedNetworkImage(
+                              imageUrl: r.imageUrl,
+                              fit: BoxFit.cover,
+                              placeholder: (ctx, url) => Container(
+                                color: r.color.withOpacity(0.1),
+                                child: Center(
+                                  child: Icon(r.icon, color: r.color, size: 36),
                                 ),
                               ),
-                            ],
+                              errorWidget: (ctx, url, err) => Container(
+                                color: r.color.withOpacity(0.1),
+                                child: Center(
+                                  child: Icon(r.icon, color: r.color, size: 36),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(r.name,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                            height: 1.3,
-                          )),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(Icons.star_rounded,
-                              size: 14, color: Colors.amber[600]),
-                          const SizedBox(width: 3),
-                          Text(
-                            '${r.rating}',
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary),
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                              gradient: LinearGradient(
+                                colors: [Colors.black.withOpacity(0.2), Colors.transparent],
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.schedule_rounded,
-                              size: 13, color: AppColors.textTertiary),
-                          const SizedBox(width: 3),
-                          Text(r.duration,
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.successLight,
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              'Starts ${r.price}',
+                              style: const TextStyle(
+                                color: AppColors.success,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(r.name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                              height: 1.3,
+                            )),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.star_rounded,
+                                size: 14, color: Colors.amber[600]),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${r.rating}',
                               style: const TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary)),
-                        ],
-                      ),
-                    ],
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.schedule_rounded,
+                                size: 13, color: AppColors.textTertiary),
+                            const SizedBox(width: 3),
+                            Text(r.duration,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -487,8 +699,9 @@ class _Repair {
   final IconData icon;
   final Color color;
   final double rating;
+  final String imageUrl;
   const _Repair(this.name, this.category, this.price, this.icon, this.color,
-      this.duration, this.rating);
+      this.duration, this.rating, this.imageUrl);
 }
 
 // ── Promo Banner ──────────────────────────────────────────────────────────────

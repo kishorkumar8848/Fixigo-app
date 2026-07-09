@@ -166,7 +166,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                           ),
                           childrenPadding: const EdgeInsets.all(16),
                           expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                           children: [
                             _buildInfoRow(Icons.person, 'Customer: ${b['customer_name'] ?? 'N/A'}'),
                             const SizedBox(height: 8),
                             _buildInfoRow(Icons.engineering, 'Tech: ${b['technician_name'] ?? 'Unassigned'}'),
@@ -174,11 +174,63 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                             _buildInfoRow(Icons.location_on, b['location'] ?? 'N/A'),
                             const SizedBox(height: 8),
                             _buildInfoRow(Icons.calendar_today, 'Preferred: ${b['preferred_date'] ?? 'N/A'}'),
+                            
+                            // Dynamic Estimate Range
+                            if (b['estimated_price_min'] != null && b['estimated_price_max'] != null) ...[
+                              const SizedBox(height: 8),
+                              _buildInfoRow(
+                                Icons.price_change_rounded,
+                                'Estimate: ₹${double.tryParse(b['estimated_price_min'].toString())?.toStringAsFixed(0)} – ₹${double.tryParse(b['estimated_price_max'].toString())?.toStringAsFixed(0)}',
+                              ),
+                            ],
+                            
+                            // Payment details
+                            if (b['booking_fee'] != null) ...[
+                              const SizedBox(height: 8),
+                              _buildInfoRow(
+                                Icons.payment_rounded,
+                                'Booking Fee: ₹${double.tryParse(b['booking_fee'].toString())?.toStringAsFixed(0)} (${b['payment_status'] ?? 'paid'})',
+                              ),
+                            ],
+                            if (b['razorpay_payment_id'] != null) ...[
+                              const SizedBox(height: 8),
+                              _buildInfoRow(
+                                Icons.receipt_rounded,
+                                'Razorpay ID: ${b['razorpay_payment_id']}',
+                              ),
+                            ],
+                            
                             const SizedBox(height: 12),
                             const Text('Issue Description:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
                             const SizedBox(height: 4),
                             Text(b['issue_description'] ?? 'No description provided',
                                 style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                                
+                            // Cancellation details
+                            if (status == 'cancelled' && b['cancellation_reason'] != null && b['cancellation_reason'].toString().isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.red.shade100),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 16),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Cancellation Reason: ${b['cancellation_reason']}',
+                                        style: TextStyle(color: Colors.red.shade900, fontSize: 12, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );

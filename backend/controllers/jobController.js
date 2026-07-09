@@ -7,18 +7,20 @@ exports.getAvailableJobs = async (req, res) => {
     const technicianId = req.user.id;
 
     // Get jobs assigned to this technician OR unassigned jobs waiting for someone
-    const [jobs] = await pool.query(
-      `SELECT j.*, b.appliance_type, b.issue_description, b.location, b.preferred_date, c.name as customer_name, c.phone as customer_phone
+    const result = await pool.query(
+      `SELECT j.*, b.appliance_type, b.issue_description, b.location, b.preferred_date, 
+              b.latitude as customer_latitude, b.longitude as customer_longitude, b.booking_fee,
+              c.name as customer_name, c.phone as customer_phone
        FROM jobs j
        JOIN bookings b ON j.booking_id = b.id
        JOIN customers c ON b.customer_id = c.id
-       WHERE (j.technician_id = ? AND j.status IN ('assigned', 'accepted', 'in_progress'))
+       WHERE (j.technician_id = $1 AND j.status IN ('assigned', 'accepted', 'in_progress'))
           OR (j.technician_id IS NULL AND j.status = 'assigned')
        ORDER BY j.created_at DESC`,
       [technicianId]
     );
 
-    res.json(jobs);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch jobs error:', err);
     res.status(500).json({ message: 'Server error fetching jobs' });
@@ -31,19 +33,22 @@ exports.acceptJob = async (req, res) => {
     const technicianId = req.user.id;
 
     // Verify job belongs to technician OR is unassigned
-    const [jobs] = await pool.query('SELECT * FROM jobs WHERE id = ? AND (technician_id = ? OR technician_id IS NULL)', [jobId, technicianId]);
-    if (jobs.length === 0) {
+    const jobsResult = await pool.query('SELECT * FROM jobs WHERE id = $1 AND (technician_id = $2 OR technician_id IS NULL)', [jobId, technicianId]);
+    if (jobsResult.rows.length === 0) {
       return res.status(404).json({ message: 'Job not found or already taken' });
     }
 
-    const job = jobs[0];
+    const job = jobsResult.rows[0];
     const bookingId = job.booking_id;
 
     // Update job status to accepted and assign to this technician
-    await pool.query('UPDATE jobs SET status = ?, technician_id = ? WHERE id = ?', ['accepted', technicianId, jobId]);
+    await pool.query('UPDATE jobs SET status = $1, technician_id = $2 WHERE id = $3', ['accepted', technicianId, jobId]);
+
+    // Reject other technician job requests for the same booking
+    await pool.query("UPDATE jobs SET status = 'rejected' WHERE booking_id = $1 AND id != $2", [bookingId, jobId]);
 
     // Update booking status to assigned
-    await pool.query('UPDATE bookings SET status = ?, technician_id = ? WHERE id = ?', ['assigned', technicianId, bookingId]);
+    await pool.query('UPDATE bookings SET status = $1, technician_id = $2 WHERE id = $3', ['assigned', technicianId, bookingId]);
 
     res.json({ message: 'Job accepted successfully' });
   } catch (err) {
@@ -57,17 +62,17 @@ exports.rejectJob = async (req, res) => {
     const jobId = req.params.jobId;
     const technicianId = req.user.id;
 
-    const [jobs] = await pool.query('SELECT * FROM jobs WHERE id = ? AND technician_id = ?', [jobId, technicianId]);
-    if (jobs.length === 0) {
+    const jobsResult = await pool.query('SELECT * FROM jobs WHERE id = $1 AND technician_id = $2', [jobId, technicianId]);
+    if (jobsResult.rows.length === 0) {
       return res.status(404).json({ message: 'Job not found' });
     }
 
     // Update job status to rejected
-    await pool.query('UPDATE jobs SET status = ? WHERE id = ?', ['rejected', jobId]);
+    await pool.query('UPDATE jobs SET status = $1 WHERE id = $2', ['rejected', jobId]);
 
     // Update booking status back to pending so other technicians can accept it
-    const bookingId = jobs[0].booking_id;
-    await pool.query('UPDATE bookings SET technician_id = NULL, status = ? WHERE id = ?', ['pending', bookingId]);
+    const bookingId = jobsResult.rows[0].booking_id;
+    await pool.query('UPDATE bookings SET technician_id = NULL, status = $1 WHERE id = $2', ['pending', bookingId]);
 
     res.json({ message: 'Job rejected successfully' });
   } catch (err) {
@@ -79,45 +84,44 @@ exports.rejectJob = async (req, res) => {
 exports.updateJobStatus = async (req, res) => {
   try {
     const jobId = req.params.jobId;
-    const { status } = req.body;
+    const { status, price } = req.body;
     const technicianId = req.user.id;
 
     if (!['accepted', 'in_progress', 'completed', 'cancelled'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    const [jobs] = await pool.query('SELECT * FROM jobs WHERE id = ? AND technician_id = ?', [jobId, technicianId]);
-    if (jobs.length === 0) {
+    const jobsResult = await pool.query('SELECT * FROM jobs WHERE id = $1 AND technician_id = $2', [jobId, technicianId]);
+    if (jobsResult.rows.length === 0) {
       return res.status(404).json({ message: 'Job not found' });
     }
 
-    const job = jobs[0];
+    const job = jobsResult.rows[0];
     const bookingId = job.booking_id;
 
-    // Update job status
-    const updateData = status === 'completed'
-      ? { status, completed_at: new Date() }
-      : { status };
+    // Update job status & price
+    const completedAt = status === 'completed' ? new Date() : null;
+    const finalPrice = status === 'completed' && price ? parseFloat(price) : (job.price || 500);
 
-    await pool.query('UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?',
-      [status, updateData.completed_at || null, jobId]);
+    await pool.query(
+      'UPDATE jobs SET status = $1, completed_at = $2, price = $3 WHERE id = $4',
+      [status, completedAt, finalPrice, jobId]
+    );
 
     // Update booking status accordingly
     let bookingStatus = status;
     if (status === 'in_progress') bookingStatus = 'in_progress';
     if (status === 'completed') bookingStatus = 'completed';
 
-    await pool.query('UPDATE bookings SET status = ? WHERE id = ?', [bookingStatus, bookingId]);
+    await pool.query('UPDATE bookings SET status = $1 WHERE id = $2', [bookingStatus, bookingId]);
 
     // If job completed, create earnings record
     if (status === 'completed') {
-      const [bookings] = await pool.query('SELECT * FROM bookings WHERE id = ?', [bookingId]);
-      if (bookings.length > 0) {
-        // Default price if not set
-        const price = job.price || 500;
+      const bookingsResult = await pool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
+      if (bookingsResult.rows.length > 0) {
         await pool.query(
-          'INSERT INTO earnings (technician_id, job_id, amount, status) VALUES (?, ?, ?, ?)',
-          [technicianId, jobId, price, 'pending']
+          'INSERT INTO earnings (technician_id, job_id, amount, status) VALUES ($1, $2, $3, $4)',
+          [technicianId, jobId, finalPrice, 'pending']
         );
       }
     }
@@ -133,15 +137,17 @@ exports.getTechnicianEarnings = async (req, res) => {
   try {
     const technicianId = req.user.id;
 
-    const [earnings] = await pool.query(
+    const result = await pool.query(
       `SELECT e.*, j.id as job_id, b.appliance_type
        FROM earnings e
        JOIN jobs j ON e.job_id = j.id
        JOIN bookings b ON j.booking_id = b.id
-       WHERE e.technician_id = ?
+       WHERE e.technician_id = $1
        ORDER BY e.created_at DESC`,
       [technicianId]
     );
+
+    const earnings = result.rows;
 
     // Calculate totals
     const totalEarnings = earnings.reduce((sum, e) => sum + (e.amount || 0), 0);

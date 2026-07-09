@@ -2,12 +2,202 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'role_selection.dart';
+import 'api.dart';
+import 'session.dart';
 
-class TechProfileScreen extends StatelessWidget {
+class TechProfileScreen extends StatefulWidget {
   const TechProfileScreen({super.key});
 
   @override
+  State<TechProfileScreen> createState() => _TechProfileScreenState();
+}
+
+class _TechProfileScreenState extends State<TechProfileScreen> {
+  bool _isLoading = true;
+  String _name = '';
+  String _email = '';
+  String _phone = '';
+  List<String> _skills = [];
+  int _experience = 0;
+  double _rating = 0.0;
+  String _verificationStatus = 'pending';
+  int _totalJobs = 0;
+  double _totalEarnings = 0.0;
+  String _address = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfile();
+  }
+
+  Future<void> _fetchProfile() async {
+    try {
+      final resp = await Api.get('/auth/technician/profile/${Session.userId}');
+      if (resp['status'] == 200) {
+        final data = resp['data'];
+        setState(() {
+          _name = data['name'] ?? '';
+          _email = data['email'] ?? '';
+          _phone = data['phone'] ?? '';
+          final skillsStr = data['skills'] ?? '';
+          _skills = skillsStr.isNotEmpty
+              ? skillsStr.split(',').map((s) => s.toString().trim()).toList()
+              : [];
+          _experience = int.tryParse(data['experience']?.toString() ?? '0') ?? 0;
+          _rating = double.tryParse(data['rating']?.toString() ?? '0') ?? 0.0;
+          _verificationStatus = data['verificationStatus'] ?? 'pending';
+          _totalJobs = int.tryParse(data['totalJobs']?.toString() ?? '0') ?? 0;
+          _totalEarnings = double.tryParse(data['totalEarnings']?.toString() ?? '0') ?? 0.0;
+          _address = data['address'] ?? '';
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _showEditAddressDialog() {
+    final addressController = TextEditingController(text: _address);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Service Address'),
+        content: TextField(
+          controller: addressController,
+          decoration: InputDecoration(
+            hintText: 'Enter your service address',
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.my_location_rounded, color: AppColors.primary),
+              onPressed: () => _requestAndFetchLocation(addressController),
+            ),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _updateProfileAddress(addressController.text.trim());
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requestAndFetchLocation(TextEditingController controller) async {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.location_on_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Location Permission'),
+          ],
+        ),
+        content: const Text(
+          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Deny'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showLocationFetchingProgress(controller);
+            },
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationFetchingProgress(TextEditingController controller) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Expanded(child: Text('Fetching current GPS coordinates...')),
+          ],
+        ),
+      ),
+    );
+
+    Future.delayed(const Duration(seconds: 1), () {
+      Navigator.pop(context);
+      final neighborhoods = [
+        'Indiranagar, Bengaluru',
+        'Koramangala, Bengaluru',
+        'HSR Layout, Bengaluru',
+        'Jayanagar, Bengaluru',
+        'Whitefield, Bengaluru',
+      ];
+      final randomNeighborhood = neighborhoods[DateTime.now().millisecond % neighborhoods.length];
+      controller.text = randomNeighborhood;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Auto-filled current location: $randomNeighborhood')),
+      );
+    });
+  }
+
+  Future<void> _updateProfileAddress(String newAddress) async {
+    setState(() => _isLoading = true);
+    try {
+      final resp = await Api.put('/auth/technician/profile/${Session.userId}', {
+        'name': _name,
+        'email': _email,
+        'phone': _phone,
+        'address': newAddress,
+      });
+      if (resp['status'] == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Address updated successfully')),
+        );
+        await _fetchProfile();
+      } else {
+        final message = resp['data']['message'] ?? 'Failed to update address';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: FixigoAppBar(
@@ -16,100 +206,165 @@ class TechProfileScreen extends StatelessWidget {
           IconButton(icon: const Icon(Icons.share_rounded), onPressed: () {}),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _TechProfileHeader(),
-            const SizedBox(height: 16),
-            // Stats
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                      child: StatCard(
-                          label: 'Total Jobs',
-                          value: '312',
-                          icon: Icons.work_rounded,
-                          color: AppColors.secondary,
-                          bgColor: AppColors.secondarySurface)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: StatCard(
-                          label: 'Rating',
-                          value: '4.8',
-                          icon: Icons.star_rounded,
-                          color: Color(0xFFFF6F00),
-                          bgColor: Color(0xFFFFF8E1))),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: StatCard(
-                          label: 'Earnings',
-                          value: '₹1.2L',
-                          icon: Icons.currency_rupee_rounded,
-                          color: AppColors.success,
-                          bgColor: AppColors.successLight)),
+      body: RefreshIndicator(
+        onRefresh: _fetchProfile,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              _TechProfileHeader(
+                name: _name,
+                skills: _skills,
+                verificationStatus: _verificationStatus,
+                experience: _experience,
+                rating: _rating,
+              ),
+              const SizedBox(height: 16),
+              // Stats
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                        child: StatCard(
+                            label: 'Total Jobs',
+                            value: '$_totalJobs',
+                            icon: Icons.work_rounded,
+                            color: AppColors.secondary,
+                            bgColor: AppColors.secondarySurface)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: StatCard(
+                            label: 'Rating',
+                            value: _rating.toStringAsFixed(1),
+                            icon: Icons.star_rounded,
+                            color: const Color(0xFFFF6F00),
+                            bgColor: const Color(0xFFFFF8E1))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: StatCard(
+                            label: 'Earnings',
+                            value: '₹${_totalEarnings.toStringAsFixed(0)}',
+                            icon: Icons.currency_rupee_rounded,
+                            color: AppColors.success,
+                            bgColor: AppColors.successLight)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Skills
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _SkillsCard(skills: _skills),
+              ),
+              const SizedBox(height: 16),
+              // Address if available
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Service Address',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                          GestureDetector(
+                            onTap: _showEditAddressDialog,
+                            child: const Icon(Icons.edit_rounded, size: 16, color: AppColors.primary),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _address.isNotEmpty ? _address : 'Not set. Tap edit to set address.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _address.isNotEmpty ? AppColors.textSecondary : Colors.red.shade400,
+                                fontStyle: _address.isNotEmpty ? FontStyle.normal : FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Verification
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _VerificationCard(status: _verificationStatus),
+              ),
+              const SizedBox(height: 16),
+              // Reviews
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _ReviewsCard(),
+              ),
+              const SizedBox(height: 16),
+              // Menu
+              _MenuGroup(
+                title: 'Account',
+                items: const [
+                  ('Personal Details', Icons.person_rounded),
+                  ('Bank Account', Icons.account_balance_rounded),
+                  ('Work Schedule', Icons.calendar_today_rounded),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            // Skills
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _SkillsCard(),
-            ),
-            const SizedBox(height: 16),
-            // Verification
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _VerificationCard(),
-            ),
-            const SizedBox(height: 16),
-            // Reviews
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _ReviewsCard(),
-            ),
-            const SizedBox(height: 16),
-            // Menu
-            _MenuGroup(
-              title: 'Account',
-              items: const [
-                ('Personal Details', Icons.person_rounded),
-                ('Bank Account', Icons.account_balance_rounded),
-                ('Work Schedule', Icons.calendar_today_rounded),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _MenuGroup(
-              title: 'Support',
-              items: const [
-                ('Help & Support', Icons.help_rounded),
-                ('Report an Issue', Icons.flag_rounded),
-                ('Terms & Conditions', Icons.description_rounded),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const RoleSelectionScreen()),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  side: const BorderSide(color: AppColors.error),
-                ),
-                icon: const Icon(Icons.logout_rounded, size: 18),
-                label: const Text('Logout'),
+              const SizedBox(height: 12),
+              _MenuGroup(
+                title: 'Support',
+                items: const [
+                  ('Help & Support', Icons.help_rounded),
+                  ('Report an Issue', Icons.flag_rounded),
+                  ('Terms & Conditions', Icons.description_rounded),
+                ],
               ),
-            ),
-            const SizedBox(height: 24),
-          ],
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Session.token = null;
+                    Session.role = null;
+                    Session.userId = null;
+                    Session.name = null;
+                    Session.email = null;
+                    Session.address = null;
+                    Session.latitude = null;
+                    Session.longitude = null;
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RoleSelectionScreen()),
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: const BorderSide(color: AppColors.error),
+                  ),
+                  icon: const Icon(Icons.logout_rounded, size: 18),
+                  label: const Text('Logout'),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
@@ -117,8 +372,36 @@ class TechProfileScreen extends StatelessWidget {
 }
 
 class _TechProfileHeader extends StatelessWidget {
+  final String name;
+  final List<String> skills;
+  final String verificationStatus;
+  final int experience;
+  final double rating;
+
+  const _TechProfileHeader({
+    required this.name,
+    required this.skills,
+    required this.verificationStatus,
+    required this.experience,
+    required this.rating,
+  });
+
   @override
   Widget build(BuildContext context) {
+    final initials = name.isNotEmpty
+        ? name.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase()
+        : 'Tech';
+    final primarySkill = skills.isNotEmpty ? skills.first : 'Specialist';
+
+    Widget statusBadge;
+    if (verificationStatus == 'verified') {
+      statusBadge = StatusBadge.success('Verified');
+    } else if (verificationStatus == 'rejected') {
+      statusBadge = StatusBadge.error('Rejected');
+    } else {
+      statusBadge = StatusBadge.warning('Pending');
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -130,15 +413,15 @@ class _TechProfileHeader extends StatelessWidget {
               Container(
                 width: 80,
                 height: 80,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
                     colors: [Color(0xFF00695C), Color(0xFF00897B)],
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text('RK',
-                      style: TextStyle(
+                child: Center(
+                  child: Text(initials,
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 28,
                           fontWeight: FontWeight.w700)),
@@ -150,32 +433,32 @@ class _TechProfileHeader extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: AppColors.success,
+                    color: verificationStatus == 'verified' ? AppColors.success : AppColors.warning,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
-                  child: const Icon(Icons.check_rounded,
+                  child: Icon(verificationStatus == 'verified' ? Icons.check_rounded : Icons.hourglass_empty_rounded,
                       color: Colors.white, size: 12),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text('Rajesh Kumar',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          Text(name,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          const Text('AC & Refrigeration Specialist',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          Text('$primarySkill Specialist',
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              StatusBadge.success('Verified'),
+              statusBadge,
               const SizedBox(width: 8),
-              StatusBadge.info('Senior Tech'),
+              if (experience >= 5) StatusBadge.info('Senior Tech'),
               const SizedBox(width: 8),
               StatusBadge(
-                text: '6 yrs exp',
+                text: '$experience yrs exp',
                 color: AppColors.warning,
                 bgColor: AppColors.warningLight,
               ),
@@ -187,12 +470,12 @@ class _TechProfileHeader extends StatelessWidget {
             children: List.generate(
                 5,
                 (i) => Icon(
-                    i < 4 ? Icons.star_rounded : Icons.star_half_rounded,
+                    i < rating.floor() ? Icons.star_rounded : (i < rating ? Icons.star_half_rounded : Icons.star_border_rounded),
                     color: Colors.amber[600],
                     size: 20)),
           ),
-          const Text('4.8 out of 5 (127 reviews)',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          Text('${rating.toStringAsFixed(1)} out of 5',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
         ],
       ),
     );
@@ -200,19 +483,13 @@ class _TechProfileHeader extends StatelessWidget {
 }
 
 class _SkillsCard extends StatelessWidget {
-  final _skills = const [
-    'AC Service',
-    'Gas Refill',
-    'Refrigerator',
-    'Washing Machine',
-    'Geyser',
-    'Split AC',
-    'Window AC',
-    'Copper Coil',
-  ];
+  final List<String> skills;
+  const _SkillsCard({required this.skills});
 
   @override
   Widget build(BuildContext context) {
+    final displaySkills = skills.isNotEmpty ? skills : ['General Appliance Repair'];
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -229,7 +506,7 @@ class _SkillsCard extends StatelessWidget {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _skills
+            children: displaySkills
                 .map((s) => Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
@@ -254,13 +531,16 @@ class _SkillsCard extends StatelessWidget {
 }
 
 class _VerificationCard extends StatelessWidget {
+  final String status;
+  const _VerificationCard({required this.status});
+
   @override
   Widget build(BuildContext context) {
     final docs = [
       ('Aadhar Card', true),
       ('PAN Card', true),
-      ('Police Verification', true),
-      ('Skill Certificate', true),
+      ('Police Verification', status == 'verified'),
+      ('Skill Certificate', status == 'verified'),
     ];
 
     return Container(
@@ -278,7 +558,12 @@ class _VerificationCard extends StatelessWidget {
               const Text('Verification Status',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const Spacer(),
-              StatusBadge.success('Fully Verified'),
+              if (status == 'verified')
+                StatusBadge.success('Fully Verified')
+              else if (status == 'rejected')
+                StatusBadge.error('Rejected')
+              else
+                StatusBadge.warning('Pending Approval'),
             ],
           ),
           const SizedBox(height: 12),

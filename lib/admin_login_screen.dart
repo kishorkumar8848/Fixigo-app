@@ -89,7 +89,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connection error. Please try again later.')),
+          const SnackBar(content: Text('Unable to reach the login server. Please try again.')),
         );
       }
     }

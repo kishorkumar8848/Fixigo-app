@@ -10,14 +10,16 @@ exports.submitResaleRequest = async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const [result] = await pool.query(
-      'INSERT INTO resale_requests (customer_id, appliance_type, condition_description, expected_price, status) VALUES (?, ?, ?, ?, ?)',
+    const result = await pool.query(
+      'INSERT INTO resale_requests (customer_id, appliance_type, condition_description, expected_price, status) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [customerId, appliance_type, condition_description || '', expected_price, 'pending']
     );
 
+    const resaleRequestId = result.rows[0].id;
+
     res.status(201).json({ 
       message: 'Resale request submitted successfully',
-      resaleRequestId: result.insertId
+      resaleRequestId
     });
   } catch (err) {
     console.error('Submit resale request error:', err);
@@ -29,12 +31,12 @@ exports.getCustomerResaleRequests = async (req, res) => {
   try {
     const customerId = req.params.customerId;
 
-    const [requests] = await pool.query(
-      'SELECT * FROM resale_requests WHERE customer_id = ? ORDER BY created_at DESC',
+    const result = await pool.query(
+      'SELECT * FROM resale_requests WHERE customer_id = $1 ORDER BY created_at DESC',
       [customerId]
     );
 
-    res.json(requests);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch resale requests error:', err);
     res.status(500).json({ message: 'Server error fetching resale requests' });

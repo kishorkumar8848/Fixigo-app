@@ -5,4 +5,8 @@ class Session {
   static int? userId;
   static String? name;
   static String? email;
+  static String? phone;
+  static String? address;
+  static double? latitude;
+  static double? longitude;
 }

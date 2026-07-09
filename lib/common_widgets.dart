@@ -4,7 +4,7 @@ import 'app_theme.dart';
 // ─── Gradient Button ──────────────────────────────────────────────────────────
 class GradientButton extends StatelessWidget {
   final String text;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Gradient? gradient;
   final double height;
   final Widget? icon;
@@ -12,7 +12,7 @@ class GradientButton extends StatelessWidget {
   const GradientButton({
     super.key,
     required this.text,
-    required this.onTap,
+    this.onTap,
     this.gradient,
     this.height = 54,
     this.icon,
@@ -42,8 +42,8 @@ class GradientButton extends StatelessWidget {
               if (icon != null) ...[icon!, const SizedBox(width: 10)],
               Text(
                 text,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: onTap != null ? Colors.white : Colors.white70,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.3,
@@ -405,6 +405,7 @@ class CustomTextField extends StatefulWidget {
   final bool isPassword;
   final TextInputType keyboardType;
   final String? Function(String?)? validator;
+  final Widget? suffixIcon;
 
   const CustomTextField({
     super.key,
@@ -414,6 +415,7 @@ class CustomTextField extends StatefulWidget {
     this.isPassword = false,
     this.keyboardType = TextInputType.text,
     this.validator,
+    this.suffixIcon,
   });
 
   @override
@@ -457,7 +459,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                   color: Colors.white.withOpacity(0.6),
                 ),
               )
-            : null,
+            : widget.suffixIcon,
         filled: true,
         fillColor: Colors.white.withOpacity(0.12),
         border: OutlineInputBorder(

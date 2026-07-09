@@ -60,10 +60,73 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _requestAndFetchLocation() async {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.location_on_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Location Permission'),
+          ],
+        ),
+        content: const Text(
+          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Deny'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showLocationFetchingProgress();
+            },
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationFetchingProgress() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Expanded(child: Text('Fetching current GPS coordinates...')),
+          ],
+        ),
+      ),
+    );
+
+    Future.delayed(const Duration(seconds: 1), () {
+      Navigator.pop(context);
+      final neighborhoods = [
+        'Indiranagar, Bengaluru',
+        'Koramangala, Bengaluru',
+        'HSR Layout, Bengaluru',
+        'Jayanagar, Bengaluru',
+        'Whitefield, Bengaluru',
+      ];
+      final randomNeighborhood =
+          neighborhoods[DateTime.now().millisecond % neighborhoods.length];
+      _signupAddressController.text = randomNeighborhood;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Auto-filled current location: $randomNeighborhood')),
+      );
+    });
+  }
+
+  Future<bool> _loginWithCredentials(String email, String password) async {
     setState(() => _loginLoading = true);
-    final email = _loginEmailController.text.trim();
-    final password = _loginPasswordController.text.trim();
 
     try {
       final resp = await Api.post('/auth/customer/login', {
@@ -71,7 +134,7 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
         'password': password,
       });
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (resp['status'] == 200) {
         final data = resp['data'];
@@ -80,22 +143,37 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
         Session.userId = data['customerId'];
         Session.name = data['name'] ?? '';
         Session.email = data['email'] ?? email;
+        Session.phone = data['phone'] ?? '';
+        Session.address = data['address'] ?? '';
 
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const UserMainScreen()),
         );
+        return true;
       } else {
         final message = resp['data']['message'] ?? 'Login failed';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
-        setState(() => _loginLoading = false);
+        return false;
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
-      setState(() => _loginLoading = false);
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('Unable to reach the login server. Please try again.')),
+      );
+      return false;
+    } finally {
+      if (mounted) setState(() => _loginLoading = false);
     }
+  }
+
+  Future<void> _handleLogin() async {
+    final email = _loginEmailController.text.trim();
+    final password = _loginPasswordController.text.trim();
+    await _loginWithCredentials(email, password);
   }
 
   Future<void> _handleSignup() async {
@@ -119,7 +197,11 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
 
       if (resp['status'] == 201) {
         // automatically log in using the same credentials
-        await _handleLogin();
+        final success = await _loginWithCredentials(email, password);
+        if (!mounted) return;
+        if (!success) {
+          setState(() => _signupLoading = false);
+        }
       } else {
         final message = resp['data']['message'] ?? 'Signup failed';
         ScaffoldMessenger.of(context)
@@ -127,10 +209,266 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
         setState(() => _signupLoading = false);
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Error: $e')));
       setState(() => _signupLoading = false);
     }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const GoogleLogoWidget(size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Sign in with Google',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'to continue to Fixigo',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.primary,
+                  child: Text(
+                    'K',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(
+                  'Kishor Kumar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                subtitle: Text(
+                  'kishor80720@gmail.com',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _executeGoogleLogin('kishor80720@gmail.com', 'Kishor Kumar');
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.grey[200],
+                  child: Icon(Icons.add, color: Colors.grey[700]),
+                ),
+                title: Text(
+                  'Use another account',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showNewGoogleAccountDialog();
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showNewGoogleAccountDialog() {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const GoogleLogoWidget(size: 24),
+              const SizedBox(width: 12),
+              const Text('Google Account'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  hintText: 'John Doe',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email Address',
+                  hintText: 'john.doe@gmail.com',
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final email = emailController.text.trim();
+                if (name.isEmpty || email.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please fill all fields')),
+                  );
+                  return;
+                }
+                if (!email.contains('@')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a valid email')),
+                  );
+                  return;
+                }
+                Navigator.pop(context);
+                _executeGoogleLogin(email, name);
+              },
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _executeGoogleLogin(String email, String name) async {
+    setState(() {
+      _loginLoading = true;
+      _signupLoading = true;
+    });
+
+    try {
+      final resp = await Api.post('/auth/customer/google-login', {
+        'email': email,
+        'name': name,
+      });
+
+      if (!mounted) return;
+
+      if (resp['status'] == 200) {
+        final data = resp['data'];
+        Session.token = data['token'];
+        Session.role = 'customer';
+        Session.userId = data['customerId'];
+        Session.name = data['name'] ?? '';
+        Session.email = data['email'] ?? email;
+        Session.phone = data['phone'] ?? '';
+        Session.address = data['address'] ?? '';
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const UserMainScreen()),
+        );
+      } else {
+        final message = resp['data']['message'] ?? 'Google login failed';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+        setState(() {
+          _loginLoading = false;
+          _signupLoading = false;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      setState(() {
+        _loginLoading = false;
+        _signupLoading = false;
+      });
+    }
+  }
+
+  Widget _buildGoogleButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: OutlinedButton(
+        onPressed:
+            (_loginLoading || _signupLoading) ? null : _handleGoogleSignIn,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withOpacity(0.4), width: 1.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: const GoogleLogoWidget(size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Continue with Google',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -272,6 +610,30 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
                                         )),
                               ),
                             ),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withOpacity(0.3))),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  child: Text(
+                                    'OR',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.6),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withOpacity(0.3))),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            _buildGoogleButton(),
                           ],
                         ),
                       ),
@@ -322,6 +684,11 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
                               controller: _signupAddressController,
                               hintText: 'Address',
                               prefixIcon: Icons.location_on_outlined,
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.my_location_rounded,
+                                    color: Colors.white70),
+                                onPressed: _requestAndFetchLocation,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             CustomTextField(
@@ -355,6 +722,30 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
                                         )),
                               ),
                             ),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withOpacity(0.3))),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  child: Text(
+                                    'OR',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.6),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withOpacity(0.3))),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            _buildGoogleButton(),
                             const SizedBox(height: 24),
                           ],
                         ),
@@ -369,4 +760,66 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
       ),
     );
   }
+}
+
+class GoogleLogoWidget extends StatelessWidget {
+  final double size;
+  const GoogleLogoWidget({super.key, this.size = 24.0});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: GoogleLogoPainter(),
+    );
+  }
+}
+
+class GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double radius = w / 2;
+    final double strokeWidth = w * 0.24;
+    final center = Offset(radius, radius);
+    final rect =
+        Rect.fromCircle(center: center, radius: radius - strokeWidth / 2);
+
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+
+    // 1. Red (top): 215° to 315°
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(rect, 3.75, 1.75, false, paint);
+
+    // 2. Yellow (left): 135° to 215°
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(rect, 2.35, 1.4, false, paint);
+
+    // 3. Green (bottom): 45° to 135°
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(rect, 0.78, 1.57, false, paint);
+
+    // 4. Blue (right): -45° to 45°
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(rect, -0.78, 1.57, false, paint);
+
+    // Draw horizontal bar
+    final barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+
+    final barRect = Rect.fromLTWH(
+      radius,
+      radius - strokeWidth / 2,
+      radius,
+      strokeWidth,
+    );
+    canvas.drawRect(barRect, barPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,12 +1,145 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'common_widgets.dart';
+import 'api.dart';
 
-class TrackRepairScreen extends StatelessWidget {
-  const TrackRepairScreen({super.key});
+class TrackRepairScreen extends StatefulWidget {
+  final Map<String, dynamic> booking;
+
+  const TrackRepairScreen({super.key, required this.booking});
+
+  @override
+  State<TrackRepairScreen> createState() => _TrackRepairScreenState();
+}
+
+class _TrackRepairScreenState extends State<TrackRepairScreen> {
+  Map<String, dynamic>? _booking;
+
+  @override
+  void initState() {
+    super.initState();
+    _booking = widget.booking;
+    _fetchBookingDetails();
+  }
+
+  Future<void> _fetchBookingDetails() async {
+    try {
+      final resp = await Api.get('/bookings/details/${widget.booking['id']}');
+      if (resp['status'] == 200) {
+        setState(() {
+          _booking = resp['data'];
+        });
+      }
+    } catch (e) {
+      // fallback to passed data
+    }
+  }
+
+  void _showCancelDialog() {
+    final reasonController = TextEditingController();
+    bool isCancelling = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text('Cancel Repair Service', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Please tell us the reason for cancelling this repair service:',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Enter reason (e.g. Technician took too long, solved it myself, etc.)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isCancelling ? null : () => Navigator.pop(ctx),
+              child: const Text('Go Back'),
+            ),
+            ElevatedButton(
+              onPressed: isCancelling
+                  ? null
+                  : () async {
+                      final reason = reasonController.text.trim();
+                      if (reason.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter a cancellation reason.')),
+                        );
+                        return;
+                      }
+
+                      setModalState(() => isCancelling = true);
+
+                      try {
+                        final resp = await Api.put('/bookings/${_booking!['id']}/cancel', {
+                          'reason': reason,
+                        });
+
+                        if (resp['status'] == 200) {
+                          Navigator.pop(ctx);
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Repair service cancelled successfully.')),
+                          );
+                          _fetchBookingDetails();
+                        } else {
+                          final message = resp['data']['message'] ?? 'Failed to cancel repair';
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(message)),
+                          );
+                          setModalState(() => isCancelling = false);
+                        }
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: $e')),
+                        );
+                        setModalState(() => isCancelling = false);
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              child: isCancelling
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Text('Confirm Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_booking == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: const FixigoAppBar(title: 'Track Repair'),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final booking = _booking!;
+    final status = booking['status'] ?? 'pending';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: FixigoAppBar(
@@ -17,24 +150,77 @@ class TrackRepairScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            if (status == 'cancelled') ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.errorLight,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_rounded, color: AppColors.error, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Repair Cancelled',
+                            style: TextStyle(
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Reason: ${booking['cancellation_reason'] ?? 'No reason provided'}',
+                            style: const TextStyle(
+                              color: AppColors.error,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Tech card
-            _TechnicianCard(),
+            _TechnicianCard(booking: booking),
             const SizedBox(height: 20),
             // Map placeholder
-            _MapPlaceholder(),
+            _MapPlaceholder(booking: booking),
             const SizedBox(height: 20),
             // Job info
-            _JobInfoCard(),
+            _JobInfoCard(booking: booking),
             const SizedBox(height: 20),
             // Timeline
-            _TimelineCard(),
+            _TimelineCard(booking: booking),
             const SizedBox(height: 20),
             // Actions
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () {
+                      final phone = booking['technician_phone'];
+                      if (phone != null && phone.isNotEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Calling technician at $phone...')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('No technician assigned to call yet.')),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.call_rounded, size: 18),
                     label: const Text('Call'),
                   ),
@@ -42,13 +228,37 @@ class TrackRepairScreen extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Chat system starting...')),
+                      );
+                    },
                     icon: const Icon(Icons.chat_rounded, size: 18),
                     label: const Text('Chat'),
                   ),
                 ),
               ],
             ),
+            if (status != 'completed' && status != 'cancelled') ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton.icon(
+                  onPressed: _showCancelDialog,
+                  icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+                  label: const Text('Cancel Repair'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -57,8 +267,18 @@ class TrackRepairScreen extends StatelessWidget {
 }
 
 class _TechnicianCard extends StatelessWidget {
+  final Map<String, dynamic> booking;
+
+  const _TechnicianCard({required this.booking});
+
   @override
   Widget build(BuildContext context) {
+    final techName = booking['technician_name'];
+    final hasTech = techName != null && techName.toString().isNotEmpty;
+    final initials = hasTech
+        ? techName.trim().split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase()
+        : '?';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -77,27 +297,28 @@ class _TechnicianCard extends StatelessWidget {
                   gradient: AppColors.primaryGradient,
                   shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text('RK',
-                      style: TextStyle(
+                child: Center(
+                  child: Text(initials,
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w700)),
                 ),
               ),
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+              if (hasTech)
+                Positioned(
+                  bottom: 2,
+                  right: 2,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(width: 14),
@@ -105,36 +326,46 @@ class _TechnicianCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Rajesh Kumar',
+                Text(hasTech ? techName : 'Assigning Technician...',
                     style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                        const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    ...List.generate(
-                        5,
-                        (i) => Icon(
-                            i < 4
-                                ? Icons.star_rounded
-                                : Icons.star_half_rounded,
-                            size: 14,
-                            color: Colors.amber[600])),
-                    const SizedBox(width: 4),
-                    const Text('4.8 (127)',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    StatusBadge.success('Verified'),
-                    const SizedBox(width: 6),
-                    const Text('AC Specialist • 6 yrs exp',
-                        style: TextStyle(
-                            fontSize: 11, color: AppColors.textSecondary)),
-                  ],
-                ),
+                if (hasTech) ...[
+                  Row(
+                    children: [
+                      ...List.generate(
+                          5,
+                          (i) => Icon(
+                              i < 4
+                                  ? Icons.star_rounded
+                                  : Icons.star_half_rounded,
+                              size: 14,
+                              color: Colors.amber[600])),
+                      const SizedBox(width: 4),
+                      Text('${booking['rating'] ?? '4.8'} (127)',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Row(
+                    children: [
+                      StatusBadge(
+                        text: 'Verified',
+                        color: AppColors.success,
+                        bgColor: AppColors.successLight,
+                      ),
+                      SizedBox(width: 6),
+                      Text('Repair Specialist',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ] else ...[
+                  const Text('Finding the best technician for your repair',
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary)),
+                ],
               ],
             ),
           ),
@@ -145,8 +376,24 @@ class _TechnicianCard extends StatelessWidget {
 }
 
 class _MapPlaceholder extends StatelessWidget {
+  final Map<String, dynamic> booking;
+
+  const _MapPlaceholder({required this.booking});
+
   @override
   Widget build(BuildContext context) {
+    final status = booking['status'] ?? 'pending';
+    final hasTech = booking['technician_name'] != null;
+
+    String eta = 'Finding Technician...';
+    if (status == 'assigned') {
+      eta = 'ETA: 30 mins';
+    } else if (status == 'in_progress') {
+      eta = 'Ongoing Service';
+    } else if (status == 'pending') {
+      eta = 'Scheduling...';
+    }
+
     return Container(
       height: 200,
       decoration: BoxDecoration(
@@ -156,12 +403,10 @@ class _MapPlaceholder extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Grid lines for map feel
           CustomPaint(
             size: const Size(double.infinity, 200),
             painter: _MapGridPainter(),
           ),
-          // ETA pill
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -180,48 +425,50 @@ class _MapPlaceholder extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.electric_moped_rounded,
+                      const Icon(Icons.electric_moped_rounded,
                           color: Colors.white, size: 18),
-                      SizedBox(width: 8),
-                      Text('ETA: 15 mins',
-                          style: TextStyle(
+                      const SizedBox(width: 8),
+                      Text(eta,
+                          style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700)),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                if (hasTech && status == 'assigned') ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text('1.2 km away',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary)),
                   ),
-                  child: const Text('1.2 km away',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
-                ),
+                ],
               ],
             ),
           ),
-          // Location pin
           const Positioned(
             bottom: 24,
             right: 40,
             child: Icon(Icons.home_rounded, color: AppColors.primary, size: 28),
           ),
-          const Positioned(
-            top: 40,
-            left: 60,
-            child: Icon(Icons.engineering_rounded,
-                color: AppColors.secondary, size: 28),
-          ),
+          if (hasTech && status == 'assigned')
+            const Positioned(
+              top: 40,
+              left: 60,
+              child: Icon(Icons.engineering_rounded,
+                  color: AppColors.secondary, size: 28),
+            ),
         ],
       ),
     );
@@ -248,8 +495,29 @@ class _MapGridPainter extends CustomPainter {
 }
 
 class _JobInfoCard extends StatelessWidget {
+  final Map<String, dynamic> booking;
+
+  const _JobInfoCard({required this.booking});
+
   @override
   Widget build(BuildContext context) {
+    final status = booking['status'] ?? 'pending';
+
+    StatusBadge statusBadge;
+    if (status == 'pending') {
+      statusBadge = StatusBadge.info('Pending');
+    } else if (status == 'assigned') {
+      statusBadge = StatusBadge.warning('Assigned');
+    } else if (status == 'in_progress') {
+      statusBadge = StatusBadge.warning('In Progress');
+    } else if (status == 'completed') {
+      statusBadge = StatusBadge.success('Completed');
+    } else {
+      statusBadge = StatusBadge.error('Cancelled');
+    }
+
+    final preferredDate = booking['preferred_date'] ?? 'Today';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -265,24 +533,24 @@ class _JobInfoCard extends StatelessWidget {
             children: [
               const Text('Job Details',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              StatusBadge.warning('In Progress'),
+              statusBadge,
             ],
           ),
           const SizedBox(height: 12),
-          const InfoRow(
-              icon: Icons.ac_unit_rounded,
+          InfoRow(
+              icon: Icons.build_rounded,
               label: 'Service',
-              value: 'AC Gas Refill & Service'),
+              value: booking['appliance_type'] ?? 'General Repair'),
           const Divider(),
-          const InfoRow(
+          InfoRow(
               icon: Icons.tag_rounded,
               label: 'Booking ID',
-              value: 'FIX-2024-8841'),
+              value: 'FIX-${booking['id']}'),
           const Divider(),
-          const InfoRow(
+          InfoRow(
               icon: Icons.schedule_rounded,
               label: 'Scheduled',
-              value: 'Today • 11:00 AM – 1:00 PM'),
+              value: '$preferredDate • 9:00 AM – 6:00 PM'),
         ],
       ),
     );
@@ -290,19 +558,53 @@ class _JobInfoCard extends StatelessWidget {
 }
 
 class _TimelineCard extends StatelessWidget {
+  final Map<String, dynamic> booking;
+
+  const _TimelineCard({required this.booking});
+
   @override
   Widget build(BuildContext context) {
+    final status = booking['status'] ?? 'pending';
+    final hasTech = booking['technician_name'] != null;
+
     final steps = [
-      _TimeStep('Booking Confirmed', 'Your booking has been confirmed', true,
-          true, Icons.check_circle_rounded),
-      _TimeStep('Technician Assigned', 'Rajesh Kumar has been assigned', true,
-          false, Icons.engineering_rounded),
-      _TimeStep('On the Way', 'Technician is heading to your location', false,
-          false, Icons.electric_moped_rounded),
-      _TimeStep('Service Ongoing', 'Repair in progress', false, false,
-          Icons.build_rounded),
-      _TimeStep('Job Completed', 'Payment & invoice', false, false,
-          Icons.task_alt_rounded),
+      _TimeStep(
+        'Booking Confirmed',
+        'Your booking has been confirmed',
+        true,
+        status == 'pending' && !hasTech,
+        Icons.check_circle_rounded,
+      ),
+      _TimeStep(
+        'Technician Assigned',
+        hasTech
+            ? '${booking['technician_name']} has been assigned'
+            : 'Finding a nearby technician',
+        hasTech,
+        status == 'pending' && hasTech,
+        Icons.engineering_rounded,
+      ),
+      _TimeStep(
+        'On the Way',
+        'Technician is heading to your location',
+        status == 'assigned' || status == 'in_progress' || status == 'completed',
+        status == 'assigned',
+        Icons.electric_moped_rounded,
+      ),
+      _TimeStep(
+        'Service Ongoing',
+        'Repair in progress',
+        status == 'in_progress' || status == 'completed',
+        status == 'in_progress',
+        Icons.build_rounded,
+      ),
+      _TimeStep(
+        'Job Completed',
+        'Payment & invoice',
+        status == 'completed',
+        status == 'completed',
+        Icons.task_alt_rounded,
+      ),
     ];
 
     return Container(
@@ -321,7 +623,11 @@ class _TimelineCard extends StatelessWidget {
           ...List.generate(steps.length, (i) {
             final s = steps[i];
             final isLast = i == steps.length - 1;
-            return _TimelineRow(step: s, isLast: isLast, isActive: i == 2);
+            return _TimelineRow(
+              step: s,
+              isLast: isLast,
+              isActive: s.active,
+            );
           }),
         ],
       ),

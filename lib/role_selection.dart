@@ -27,7 +27,10 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0D47A1), // Fallback background color matching the top gradient color
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(gradient: AppColors.heroGradient),
         child: SafeArea(
           child: Padding(
@@ -37,27 +40,59 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 24),
-                  // Top logo
+                  // Top logo + Technician link
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.build_circle_rounded,
-                            color: AppColors.primary, size: 28),
+                      Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.build_circle_rounded,
+                                color: AppColors.primary, size: 24),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'fixigo',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.8,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'fixigo',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: -0.8,
+                      TextButton(
+                        onPressed: () => _navigateToRole(1),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.white.withOpacity(0.1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.person_outline_rounded, size: 16, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text(
+                              "I'm a Technician",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -69,8 +104,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     child: Text(
                       'How would you\nlike to continue?',
                       style: TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
                         color: Colors.white,
                         letterSpacing: -0.5,
                         height: 1.25,
@@ -91,7 +126,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // Role cards
+                  // Customer Card
                   _RoleCard(
                     index: 0,
                     selected: _selectedRole == 0,
@@ -105,73 +140,18 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                       _navigateToRole(0);
                     },
                   ),
-                  const SizedBox(height: 16),
-                  _RoleCard(
-                    index: 1,
-                    selected: _selectedRole == 1,
-                    icon: Icons.engineering_rounded,
-                    title: 'I\'m a Technician',
-                    subtitle:
-                        'Accept jobs, complete repairs,\ntrack earnings & manage your schedule',
-                    tags: const ['View Jobs', 'Earn Money', 'Build Ratings'],
-                    accent: AppColors.secondary,
-                    onTap: () {
-                      setState(() => _selectedRole = 1);
-                      _navigateToRole(1);
-                    },
-                  ),
-
-                  const SizedBox(height: 20),
-                  // Admin login button
-                  GestureDetector(
-                    onTap: _navigateToAdminLogin,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.2),
-                          width: 1,
-                        ),
-                      ),
-                      child: Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.admin_panel_settings,
-                              color: Colors.white.withOpacity(0.8),
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Admin Login',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.8),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 36),
                   // Footer
                   Text(
                     'By continuing, you agree to our Terms of Service\nand Privacy Policy',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withOpacity(0.55),
                       fontSize: 12,
                       height: 1.6,
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
@@ -263,13 +243,14 @@ class _RoleCardState extends State<_RoleCard>
           child: Row(
             children: [
               Container(
-                width: 60,
-                height: 60,
+                width: 64,
+                height: 64,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Colors.white.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
                 ),
-                child: Icon(widget.icon, color: color, size: 32),
+                child: const Icon(Icons.person_rounded, color: Colors.white, size: 36),
               ),
               const SizedBox(width: 16),
               Expanded(

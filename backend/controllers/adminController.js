@@ -6,8 +6,8 @@ const pool = require('../config/db');
 
 exports.getAllCustomers = async (req, res) => {
   try {
-    const [customers] = await pool.query('SELECT id, name, email, phone, address, created_at FROM customers ORDER BY created_at DESC');
-    res.json(customers);
+    const result = await pool.query('SELECT id, name, email, phone, address, created_at FROM customers ORDER BY created_at DESC');
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch customers error:', err);
     res.status(500).json({ message: 'Server error fetching customers' });
@@ -17,13 +17,13 @@ exports.getAllCustomers = async (req, res) => {
 exports.getCustomerDetails = async (req, res) => {
   try {
     const customerId = req.params.customerId;
-    const [customers] = await pool.query('SELECT * FROM customers WHERE id = ?', [customerId]);
-    if (customers.length === 0) {
+    const result = await pool.query('SELECT * FROM customers WHERE id = $1', [customerId]);
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    const [bookings] = await pool.query('SELECT COUNT(*) as total FROM bookings WHERE customer_id = ?', [customerId]);
-    res.json({ ...customers[0], totalBookings: bookings[0].total });
+    const bookingsResult = await pool.query('SELECT COUNT(*) as total FROM bookings WHERE customer_id = $1', [customerId]);
+    res.json({ ...result.rows[0], totalBookings: bookingsResult.rows[0].total });
   } catch (err) {
     console.error('Fetch customer details error:', err);
     res.status(500).json({ message: 'Server error fetching customer details' });
@@ -34,10 +34,10 @@ exports.getCustomerDetails = async (req, res) => {
 
 exports.getAllTechnicians = async (req, res) => {
   try {
-    const [technicians] = await pool.query(
+    const result = await pool.query(
       'SELECT id, name, email, phone, skills, experience, verification_status, rating, total_jobs, id_proof_url, created_at FROM technicians ORDER BY created_at DESC'
     );
-    res.json(technicians);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch technicians error:', err);
     res.status(500).json({ message: 'Server error fetching technicians' });
@@ -47,12 +47,12 @@ exports.getAllTechnicians = async (req, res) => {
 exports.verifyTechnician = async (req, res) => {
   try {
     const technicianId = req.params.technicianId;
-    const [technicians] = await pool.query('SELECT * FROM technicians WHERE id = ?', [technicianId]);
-    if (technicians.length === 0) {
+    const result = await pool.query('SELECT * FROM technicians WHERE id = $1', [technicianId]);
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Technician not found' });
     }
 
-    await pool.query('UPDATE technicians SET verification_status = ? WHERE id = ?', ['verified', technicianId]);
+    await pool.query('UPDATE technicians SET verification_status = $1 WHERE id = $2', ['verified', technicianId]);
     res.json({ message: 'Technician verified successfully' });
   } catch (err) {
     console.error('Verify technician error:', err);
@@ -63,7 +63,7 @@ exports.verifyTechnician = async (req, res) => {
 exports.rejectTechnician = async (req, res) => {
   try {
     const technicianId = req.params.technicianId;
-    await pool.query('UPDATE technicians SET verification_status = ? WHERE id = ?', ['rejected', technicianId]);
+    await pool.query('UPDATE technicians SET verification_status = $1 WHERE id = $2', ['rejected', technicianId]);
     res.json({ message: 'Technician rejected successfully' });
   } catch (err) {
     console.error('Reject technician error:', err);
@@ -73,11 +73,11 @@ exports.rejectTechnician = async (req, res) => {
 
 exports.getPendingTechnicians = async (req, res) => {
   try {
-    const [technicians] = await pool.query(
-      'SELECT id, name, email, phone, skills, experience, verification_status, id_proof_url FROM technicians WHERE verification_status = ?',
+    const result = await pool.query(
+      'SELECT id, name, email, phone, skills, experience, verification_status, id_proof_url FROM technicians WHERE verification_status = $1',
       ['pending']
     );
-    res.json(technicians);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch pending technicians error:', err);
     res.status(500).json({ message: 'Server error fetching pending technicians' });
@@ -88,7 +88,7 @@ exports.getPendingTechnicians = async (req, res) => {
 
 exports.getAllBookings = async (req, res) => {
   try {
-    const [bookings] = await pool.query(
+    const result = await pool.query(
       `SELECT b.*, c.name as customer_name, c.phone as customer_phone,
               t.name as technician_name, t.phone as technician_phone
        FROM bookings b
@@ -96,7 +96,7 @@ exports.getAllBookings = async (req, res) => {
        LEFT JOIN technicians t ON b.technician_id = t.id
        ORDER BY b.created_at DESC`
     );
-    res.json(bookings);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch bookings error:', err);
     res.status(500).json({ message: 'Server error fetching bookings' });
@@ -105,16 +105,16 @@ exports.getAllBookings = async (req, res) => {
 
 exports.getBookingStats = async (req, res) => {
   try {
-    const [totalBookings] = await pool.query('SELECT COUNT(*) as total FROM bookings');
-    const [completedBookings] = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'completed'");
-    const [pendingBookings] = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'pending'");
-    const [inProgressBookings] = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'in_progress'");
+    const totalBookingsResult = await pool.query('SELECT COUNT(*) as total FROM bookings');
+    const completedBookingsResult = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'completed'");
+    const pendingBookingsResult = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'pending'");
+    const inProgressBookingsResult = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'in_progress'");
 
     res.json({
-      total: totalBookings[0].total,
-      completed: completedBookings[0].total,
-      pending: pendingBookings[0].total,
-      inProgress: inProgressBookings[0].total
+      total: totalBookingsResult.rows[0].total,
+      completed: completedBookingsResult.rows[0].total,
+      pending: pendingBookingsResult.rows[0].total,
+      inProgress: inProgressBookingsResult.rows[0].total
     });
   } catch (err) {
     console.error('Fetch booking stats error:', err);
@@ -126,13 +126,13 @@ exports.getBookingStats = async (req, res) => {
 
 exports.getAllResaleRequests = async (req, res) => {
   try {
-    const [resales] = await pool.query(
+    const result = await pool.query(
       `SELECT r.*, c.name as customer_name, c.phone as customer_phone
        FROM resale_requests r
        JOIN customers c ON r.customer_id = c.id
        ORDER BY r.created_at DESC`
     );
-    res.json(resales);
+    res.json(result.rows);
   } catch (err) {
     console.error('Fetch resale requests error:', err);
     res.status(500).json({ message: 'Server error fetching resale requests' });
@@ -142,7 +142,7 @@ exports.getAllResaleRequests = async (req, res) => {
 exports.approveResaleRequest = async (req, res) => {
   try {
     const resaleId = req.params.resaleId;
-    await pool.query('UPDATE resale_requests SET status = ? WHERE id = ?', ['approved', resaleId]);
+    await pool.query('UPDATE resale_requests SET status = $1 WHERE id = $2', ['approved', resaleId]);
     res.json({ message: 'Resale request approved' });
   } catch (err) {
     console.error('Approve resale error:', err);
@@ -153,7 +153,7 @@ exports.approveResaleRequest = async (req, res) => {
 exports.rejectResaleRequest = async (req, res) => {
   try {
     const resaleId = req.params.resaleId;
-    await pool.query('UPDATE resale_requests SET status = ? WHERE id = ?', ['rejected', resaleId]);
+    await pool.query('UPDATE resale_requests SET status = $1 WHERE id = $2', ['rejected', resaleId]);
     res.json({ message: 'Resale request rejected' });
   } catch (err) {
     console.error('Reject resale error:', err);
@@ -165,20 +165,20 @@ exports.rejectResaleRequest = async (req, res) => {
 
 exports.getDashboardOverview = async (req, res) => {
   try {
-    const [totalCustomers] = await pool.query('SELECT COUNT(*) as total FROM customers');
-    const [totalTechnicians] = await pool.query('SELECT COUNT(*) as total FROM technicians');
-    const [verifiedTechnicians] = await pool.query("SELECT COUNT(*) as total FROM technicians WHERE verification_status = 'verified'");
-    const [totalBookings] = await pool.query('SELECT COUNT(*) as total FROM bookings');
-    const [completedBookings] = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'completed'");
-    const [totalEarnings] = await pool.query('SELECT SUM(amount) as total FROM earnings WHERE status = ?', ['completed']);
+    const totalCustomersResult = await pool.query('SELECT COUNT(*) as total FROM customers');
+    const totalTechniciansResult = await pool.query('SELECT COUNT(*) as total FROM technicians');
+    const verifiedTechniciansResult = await pool.query("SELECT COUNT(*) as total FROM technicians WHERE verification_status = 'verified'");
+    const totalBookingsResult = await pool.query('SELECT COUNT(*) as total FROM bookings');
+    const completedBookingsResult = await pool.query("SELECT COUNT(*) as total FROM bookings WHERE status = 'completed'");
+    const totalEarningsResult = await pool.query('SELECT SUM(amount) as total FROM earnings WHERE status = $1', ['completed']);
 
     res.json({
-      totalCustomers: totalCustomers[0].total,
-      totalTechnicians: totalTechnicians[0].total,
-      verifiedTechnicians: verifiedTechnicians[0].total,
-      totalBookings: totalBookings[0].total,
-      completedBookings: completedBookings[0].total,
-      totalEarnings: totalEarnings[0].total || 0
+      totalCustomers: totalCustomersResult.rows[0].total,
+      totalTechnicians: totalTechniciansResult.rows[0].total,
+      verifiedTechnicians: verifiedTechniciansResult.rows[0].total,
+      totalBookings: totalBookingsResult.rows[0].total,
+      completedBookings: completedBookingsResult.rows[0].total,
+      totalEarnings: totalEarningsResult.rows[0].total || 0
     });
   } catch (err) {
     console.error('Dashboard overview error:', err);

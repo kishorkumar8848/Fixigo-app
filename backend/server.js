@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const pool = require('./config/db');
 
 const app = express();
@@ -8,7 +10,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -39,18 +40,29 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-// Start server with database connection test
-app.listen(PORT, async () => {
+async function initializeDatabase() {
   try {
-    // Test database connection
-    const connection = await pool.getConnection();
-    console.log('✓ Database connection successful');
-    connection.release();
+    const useSqlite = process.env.DB_USE_SQLITE === 'true';
+    if (useSqlite) {
+      const initSqlitePath = path.join(__dirname, 'init_sqlite.js');
+      if (fs.existsSync(initSqlitePath)) {
+        require(initSqlitePath);
+      }
+      return;
+    }
 
-    console.log(`✓ Server running on http://localhost:${PORT}`);
+    const client = await pool.connect();
+    console.log('✓ Database connection successful');
+    client.release();
   } catch (err) {
     console.error('✗ Database connection failed:', err.message);
-    console.error('Please ensure MySQL is running and credentials in .env are correct');
+    console.error('Please ensure Supabase is configured and credentials in .env are correct');
     process.exit(1);
   }
+}
+
+// Start server with database connection test
+app.listen(PORT, async () => {
+  await initializeDatabase();
+  console.log(`✓ Server running on http://localhost:${PORT}`);
 });

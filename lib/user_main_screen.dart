@@ -15,14 +15,38 @@ class UserMainScreen extends StatefulWidget {
 
 class _UserMainScreenState extends State<UserMainScreen> {
   int _currentIndex = 0;
+  String? _preselectedCategory;
+  String? _prefilledIssue;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    BookServiceScreen(),
-    ResellScreen(),
-    WarrantyScreen(),
-    ProfileScreen(),
-  ];
+  void _switchTab(int index, {String? category, String? issue}) {
+    setState(() {
+      _currentIndex = index;
+      _preselectedCategory = category;
+      _prefilledIssue = issue;
+    });
+  }
+
+  List<Widget> get _screens => [
+        HomeScreen(
+          onCategorySelected: (cat) => _switchTab(1, category: cat),
+          onPopularSelected: (cat, issue) => _switchTab(1, category: cat, issue: issue),
+        ),
+        BookServiceScreen(
+          initialCategory: _preselectedCategory,
+          initialIssue: _prefilledIssue,
+          onBookingCompleted: () {
+            setState(() {
+              _preselectedCategory = null;
+              _prefilledIssue = null;
+            });
+          },
+        ),
+        const ResellScreen(),
+        const WarrantyScreen(),
+        ProfileScreen(
+          onTabChanged: (index) => _switchTab(index),
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +57,12 @@ class _UserMainScreenState extends State<UserMainScreen> {
       ),
       bottomNavigationBar: _FixigoBottomNav(
         currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
+        onTap: (i) => setState(() {
+          _currentIndex = i;
+          // Clear preselected categories when manually tapping bottom navigation
+          _preselectedCategory = null;
+          _prefilledIssue = null;
+        }),
       ),
     );
   }

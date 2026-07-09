@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const authenticate = require('../middleware/authMiddleware');
 
 const multer = require('multer');
 const path = require('path');
@@ -24,10 +25,16 @@ const upload = multer({ storage: storage });
 // ======== CUSTOMER AUTH ROUTES ========
 router.post('/customer/signup', authController.customerSignup);
 router.post('/customer/login', authController.customerLogin);
+router.post('/customer/google-login', authController.customerGoogleLogin);
+router.get('/customer/profile/:customerId', authenticate, authController.getCustomerProfile);
+router.put('/customer/profile/:customerId', authenticate, authController.updateCustomerProfile);
 
 // ======== TECHNICIAN AUTH ROUTES ========
 router.post('/technician/signup', upload.single('id_proof'), authController.technicianSignup);
 router.post('/technician/login', authController.technicianLogin);
+router.get('/technician/profile/:technicianId', authenticate, authController.getTechnicianProfile);
+router.put('/technician/profile/:technicianId', authenticate, authController.updateTechnicianProfile);
+router.get('/technician/dashboard/:technicianId', authenticate, authController.getTechnicianDashboard);
 
 // ======== ADMIN AUTH ROUTES ========
 router.post('/admin/login', authController.adminLogin);

@@ -4,8 +4,8 @@ const pool = require('../config/db');
 
 exports.getAllServices = async (req, res) => {
     try {
-        const [services] = await pool.query('SELECT * FROM services ORDER BY category, name');
-        res.json(services);
+        const result = await pool.query('SELECT * FROM services ORDER BY category, name');
+        res.json(result.rows);
     } catch (err) {
         console.error('Fetch services error:', err);
         res.status(500).json({ message: 'Server error fetching services' });
@@ -20,14 +20,16 @@ exports.createService = async (req, res) => {
             return res.status(400).json({ message: 'Name and category are required' });
         }
 
-        const [result] = await pool.query(
-            'INSERT INTO services (name, category, description) VALUES (?, ?, ?)',
+        const result = await pool.query(
+            'INSERT INTO services (name, category, description) VALUES ($1, $2, $3) RETURNING id',
             [name, category, description || '']
         );
 
+        const serviceId = result.rows[0].id;
+
         res.status(201).json({
             message: 'Service created successfully',
-            serviceId: result.insertId,
+            serviceId,
             name,
             category
         });
@@ -43,17 +45,19 @@ exports.updateService = async (req, res) => {
         const { name, category, description } = req.body;
 
         // Check if exists
-        const [existing] = await pool.query('SELECT * FROM services WHERE id = ?', [serviceId]);
-        if (existing.length === 0) {
+        const existingResult = await pool.query('SELECT * FROM services WHERE id = $1', [serviceId]);
+        if (existingResult.rows.length === 0) {
             return res.status(404).json({ message: 'Service not found' });
         }
 
+        const existing = existingResult.rows[0];
+
         await pool.query(
-            'UPDATE services SET name = ?, category = ?, description = ? WHERE id = ?',
+            'UPDATE services SET name = $1, category = $2, description = $3 WHERE id = $4',
             [
-                name || existing[0].name,
-                category || existing[0].category,
-                description !== undefined ? description : existing[0].description,
+                name || existing.name,
+                category || existing.category,
+                description !== undefined ? description : existing.description,
                 serviceId
             ]
         );
@@ -69,12 +73,12 @@ exports.deleteService = async (req, res) => {
     try {
         const serviceId = req.params.serviceId;
 
-        const [existing] = await pool.query('SELECT * FROM services WHERE id = ?', [serviceId]);
-        if (existing.length === 0) {
+        const existingResult = await pool.query('SELECT * FROM services WHERE id = $1', [serviceId]);
+        if (existingResult.rows.length === 0) {
             return res.status(404).json({ message: 'Service not found' });
         }
 
-        await pool.query('DELETE FROM services WHERE id = ?', [serviceId]);
+        await pool.query('DELETE FROM services WHERE id = $1', [serviceId]);
         res.json({ message: 'Service deleted successfully' });
     } catch (err) {
         console.error('Delete service error:', err);
