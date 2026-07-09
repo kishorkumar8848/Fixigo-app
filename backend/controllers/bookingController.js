@@ -52,9 +52,7 @@ function selectTechniciansForBooking(technicians, applianceName, bookingLat, boo
   return ranked;
 }
 
-module.exports = {
-  selectTechniciansForBooking,
-};
+exports.selectTechniciansForBooking = selectTechniciansForBooking;
 
 function geocodeAddress(address) {
   const addr = (address || '').toLowerCase();
