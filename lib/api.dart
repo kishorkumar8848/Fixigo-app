@@ -8,7 +8,7 @@ class Api {
   // - Android emulator: 10.0.2.2
   // - iOS simulator: localhost (127.0.0.1)
   // - Web: localhost
-  static const String _renderBaseUrl = 'https://fixigo-backend.onrender.com';
+  static const String _renderBaseUrl = 'https://fixigo-app.onrender.com';
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _iosSimulatorBase = 'http://127.0.0.1:3000';
   static const String _webBaseUrl = 'http://localhost:3000';
