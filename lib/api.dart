@@ -8,13 +8,22 @@ class Api {
   // - Android emulator: 10.0.2.2
   // - iOS simulator: localhost (127.0.0.1)
   // - Web: localhost
+  static const String _renderBaseUrl = 'https://fixigo-backend.onrender.com';
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _iosSimulatorBase = 'http://127.0.0.1:3000';
   static const String _webBaseUrl = 'http://localhost:3000';
 
+  // Toggle this to false to connect to your live Render backend,
+  // or set it to true for local emulator debugging.
+  static const bool useLocalBackend = false;
+
   static String resolveBaseUrl({String? override, required bool isWeb, required TargetPlatform platform}) {
     if (override != null && override.isNotEmpty) {
       return override;
+    }
+
+    if (!useLocalBackend) {
+      return _renderBaseUrl;
     }
 
     if (isWeb) return _webBaseUrl;

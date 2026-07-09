@@ -217,6 +217,16 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   }
 
   Future<void> _handleGoogleSignIn() async {
+    final signupName = _signupNameController.text.trim();
+    final signupEmail = _signupEmailController.text.trim();
+    final loginEmail = _loginEmailController.text.trim();
+    
+    final displayEmail = signupEmail.isNotEmpty 
+        ? signupEmail 
+        : (loginEmail.isNotEmpty ? loginEmail : 'kishor80720@gmail.com');
+    final displayName = signupName.isNotEmpty ? signupName : 'Kishor Kumar';
+    final initialLetter = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'G';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -266,28 +276,28 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
               ),
               const SizedBox(height: 24),
               ListTile(
-                leading: const CircleAvatar(
+                leading: CircleAvatar(
                   backgroundColor: AppColors.primary,
                   child: Text(
-                    'K',
-                    style: TextStyle(
+                    initialLetter,
+                    style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
                 title: Text(
-                  'Kishor Kumar',
+                  displayName,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.grey[800],
                   ),
                 ),
                 subtitle: Text(
-                  'kishor80720@gmail.com',
+                  displayEmail,
                   style: TextStyle(color: Colors.grey[600]),
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  _executeGoogleLogin('kishor80720@gmail.com', 'Kishor Kumar');
+                  _executeGoogleLogin(displayEmail, displayName);
                 },
               ),
               const Divider(),
