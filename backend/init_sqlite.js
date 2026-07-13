@@ -28,7 +28,12 @@ CREATE TABLE IF NOT EXISTS technicians (
   skills TEXT,
   experience INTEGER DEFAULT 0,
   id_proof_url TEXT,
-  verification_status TEXT DEFAULT 'verified',
+  aadhar_card_url TEXT,
+  aadhar_verification_status TEXT DEFAULT 'unuploaded',
+  pan_card_url TEXT,
+  pan_verification_status TEXT DEFAULT 'unuploaded',
+  work_schedule TEXT,
+  verification_status TEXT DEFAULT 'pending',
   rating REAL DEFAULT 0,
   total_jobs INTEGER DEFAULT 0,
   address TEXT,
@@ -102,6 +107,18 @@ CREATE TABLE IF NOT EXISTS resale_requests (
   condition_description TEXT,
   expected_price REAL,
   status TEXT DEFAULT 'pending',
+  brand TEXT,
+  age_years INTEGER,
+  original_price REAL,
+  estimated_value REAL,
+  working_status TEXT,
+  cosmetic_condition TEXT,
+  has_bill INTEGER,
+  has_box INTEGER,
+  has_accessories INTEGER,
+  image_url TEXT,
+  address TEXT,
+  admin_notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
@@ -114,9 +131,78 @@ CREATE TABLE IF NOT EXISTS services (
   description TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  booking_id INTEGER NOT NULL UNIQUE,
+  customer_id INTEGER NOT NULL,
+  technician_id INTEGER NOT NULL,
+  rating INTEGER NOT NULL,
+  comment TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  FOREIGN KEY (technician_id) REFERENCES technicians(id) ON DELETE CASCADE
+);
 `;
 
 db.exec(schema);
+
+// Dynamically patch existing database if needed
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN aadhar_card_url TEXT;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN aadhar_verification_status TEXT DEFAULT 'unuploaded';");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN pan_card_url TEXT;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN pan_verification_status TEXT DEFAULT 'unuploaded';");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN work_schedule TEXT;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN address TEXT;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN latitude REAL;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians ADD COLUMN longitude REAL;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE technicians RENAME COLUMN id_proof_url TO old_id_proof_url;");
+} catch (e) {}
+try {
+  // Ensure default verification status is pending for SQLite
+  db.exec("UPDATE technicians SET verification_status = 'pending' WHERE verification_status IS NULL;");
+} catch (e) {}
+
+console.log("Database initialized & schema verified successfully.");
+
+// Dynamically add columns if database already exists
+const cols = [
+  'brand TEXT',
+  'age_years INTEGER',
+  'original_price REAL',
+  'estimated_value REAL',
+  'working_status TEXT',
+  'cosmetic_condition TEXT',
+  'has_bill INTEGER',
+  'has_box INTEGER',
+  'has_accessories INTEGER',
+  'image_url TEXT',
+  'address TEXT',
+  'admin_notes TEXT'
+];
+for (const col of cols) {
+  try {
+    db.exec(`ALTER TABLE resale_requests ADD COLUMN ${col}`);
+  } catch (_) {}
+}
 
 (async () => {
   const adminPassword = await bcrypt.hash('FixigoAdmin123', 10);

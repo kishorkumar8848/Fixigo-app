@@ -47,10 +47,18 @@ CREATE TABLE IF NOT EXISTS technicians (
     phone VARCHAR(20),
     skills VARCHAR(255),
     experience INT DEFAULT 0,
-    id_proof_url VARCHAR(255),
+    old_id_proof_url VARCHAR(255),
+    aadhar_card_url VARCHAR(255),
+    aadhar_verification_status VARCHAR(50) DEFAULT 'unuploaded',
+    pan_card_url VARCHAR(255),
+    pan_verification_status VARCHAR(50) DEFAULT 'unuploaded',
+    work_schedule TEXT,
     verification_status verification_status_enum DEFAULT 'pending',
     rating DECIMAL(3, 2) DEFAULT 0,
     total_jobs INT DEFAULT 0,
+    address TEXT,
+    latitude DECIMAL(9, 6),
+    longitude DECIMAL(9, 6),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -123,6 +131,19 @@ CREATE TABLE IF NOT EXISTS services (
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- REVIEWS TABLE
+CREATE TABLE IF NOT EXISTS reviews (
+    id SERIAL PRIMARY KEY,
+    booking_id INTEGER NOT NULL UNIQUE,
+    customer_id INTEGER NOT NULL,
+    technician_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (technician_id) REFERENCES technicians(id) ON DELETE CASCADE
+);
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_customer_email ON customers(email);
 CREATE INDEX IF NOT EXISTS idx_technician_email ON technicians(email);
@@ -132,3 +153,4 @@ CREATE INDEX IF NOT EXISTS idx_booking_technician ON bookings(technician_id);
 CREATE INDEX IF NOT EXISTS idx_job_technician ON jobs(technician_id);
 CREATE INDEX IF NOT EXISTS idx_job_booking ON jobs(booking_id);
 CREATE INDEX IF NOT EXISTS idx_earnings_technician ON earnings(technician_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_technician ON reviews(technician_id);

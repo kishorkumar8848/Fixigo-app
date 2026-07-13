@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
+import 'session.dart';
+import 'technician_main_screen.dart';
+import 'admin_main_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -63,8 +66,26 @@ class _SplashScreenState extends State<SplashScreen>
       _textController.forward();
     });
 
-    Future.delayed(const Duration(milliseconds: 2800), () {
-      if (mounted) {
+    Future.delayed(const Duration(milliseconds: 2800), () async {
+      if (!mounted) return;
+      await Session.loadFromDisk();
+      if (Session.token != null && Session.role != null) {
+        if (Session.role == 'customer') {
+          Navigator.pushReplacementNamed(context, AppRoutes.userHome);
+        } else if (Session.role == 'technician') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const TechnicianMainScreen()),
+          );
+        } else if (Session.role == 'admin') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminMainScreen()),
+          );
+        } else {
+          Navigator.pushReplacementNamed(context, AppRoutes.roleSelection);
+        }
+      } else {
         Navigator.pushReplacementNamed(context, AppRoutes.roleSelection);
       }
     });

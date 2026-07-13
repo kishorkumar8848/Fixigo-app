@@ -6,6 +6,7 @@ import 'session.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'technician_main_screen.dart';
 
 class JobRequestsScreen extends StatefulWidget {
   const JobRequestsScreen({super.key});
@@ -37,8 +38,11 @@ class _JobRequestsScreenState extends State<JobRequestsScreen>
     try {
       final resp = await Api.get('/technician/jobs');
       if (resp['status'] == 200 && resp['data'] is List) {
+        final List<dynamic> jobsList = resp['data'];
+        final count = jobsList.where((j) => j['status'] == 'assigned').length;
+        TechnicianMainScreen.newJobsCount.value = count;
         setState(() {
-          _jobs = resp['data'];
+          _jobs = jobsList;
           _isLoading = false;
         });
       } else {

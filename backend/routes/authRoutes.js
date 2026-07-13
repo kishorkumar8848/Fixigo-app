@@ -35,6 +35,7 @@ router.post('/technician/login', authController.technicianLogin);
 router.get('/technician/profile/:technicianId', authenticate, authController.getTechnicianProfile);
 router.put('/technician/profile/:technicianId', authenticate, authController.updateTechnicianProfile);
 router.get('/technician/dashboard/:technicianId', authenticate, authController.getTechnicianDashboard);
+router.post('/technician/upload-proof', authenticate, upload.single('id_proof'), authController.uploadTechnicianProof);
 
 // ======== ADMIN AUTH ROUTES ========
 router.post('/admin/login', authController.adminLogin);

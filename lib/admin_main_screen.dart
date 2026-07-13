@@ -7,6 +7,7 @@ import 'admin_technicians_screen.dart';
 import 'admin_customers_screen.dart';
 import 'admin_bookings_screen.dart';
 import 'admin_services_screen.dart';
+import 'admin_resell_requests_screen.dart';
 
 // placeholders for other UI blocks
 class PlaceholderScreen extends StatelessWidget {
@@ -34,6 +35,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     const AdminTechniciansScreen(),
     const AdminCustomersScreen(),
     const AdminBookingsScreen(),
+    const AdminResellRequestsScreen(),
     const AdminServicesScreen(),
   ];
 
@@ -42,19 +44,19 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     'Technician Management',
     'Customer Management',
     'Booking Management',
+    'Resale Management',
     'Services & Categories',
   ];
 
-  void _handleLogout() {
-    Session.token = null;
-    Session.role = null;
-    Session.userId = null;
-    Session.email = null;
+  void _handleLogout() async {
+    await Session.clear();
     
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-      (route) => false,
-    );
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
@@ -121,6 +123,11 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
               icon: Icon(Icons.receipt_long_outlined),
               activeIcon: Icon(Icons.receipt_long),
               label: 'Bookings',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sell_outlined),
+              activeIcon: Icon(Icons.sell),
+              label: 'Resell',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.miscellaneous_services_outlined),

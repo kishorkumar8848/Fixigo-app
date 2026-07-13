@@ -36,6 +36,7 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
   final _signupPasswordController = TextEditingController();
   bool _signupLoading = false;
   File? _idProofImage;
+  String _idProofType = 'aadhar'; // 'aadhar' or 'pan'
 
   final List<String> _availableSkills = const [
     'Air Conditioner',
@@ -175,6 +176,8 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
           Session.name = data['name'] ?? 'Admin';
           Session.email = data['email'] ?? email;
 
+          await Session.saveToDisk();
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const AdminMainScreen()),
@@ -190,6 +193,8 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
         Session.address = data['address'] ?? '';
         Session.latitude = double.tryParse(data['latitude']?.toString() ?? '');
         Session.longitude = double.tryParse(data['longitude']?.toString() ?? '');
+
+        await Session.saveToDisk();
 
         Navigator.pushReplacement(
           context,
@@ -247,6 +252,7 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
         'skills': skills,
         'experience': experience,
         'address': address,
+        'id_proof_type': _idProofType,
       };
 
       final resp = _idProofImage == null
@@ -334,8 +340,6 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
                     indicator: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
@@ -539,7 +543,79 @@ class _TechnicianAuthScreenState extends State<TechnicianAuthScreen>
                               prefixIcon: Icons.lock_outline,
                               isPassword: true,
                             ),
-                            const SizedBox(height: 24),
+                            const Padding(
+                              padding: EdgeInsets.only(top: 16, bottom: 8),
+                              child: Text(
+                                'Select ID Proof Type to Upload',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _idProofType = 'aadhar');
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: _idProofType == 'aadhar' ? Colors.white : Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: _idProofType == 'aadhar' ? Colors.white : Colors.white.withOpacity(0.3),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'Aadhaar Card',
+                                          style: TextStyle(
+                                            color: _idProofType == 'aadhar' ? AppColors.primary : Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _idProofType = 'pan');
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: _idProofType == 'pan' ? Colors.white : Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: _idProofType == 'pan' ? Colors.white : Colors.white.withOpacity(0.3),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'PAN Card',
+                                          style: TextStyle(
+                                            color: _idProofType == 'pan' ? AppColors.primary : Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
                             // ID Proof Upload UI (optional)
                             GestureDetector(
                               onTap: _pickImage,

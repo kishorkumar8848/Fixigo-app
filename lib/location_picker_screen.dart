@@ -123,7 +123,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     });
 
     try {
-      final placemarks = await placemarkFromCoordinates(
+      final placemarks = await Geocoding().placemarkFromCoordinates(
         latLng.latitude,
         latLng.longitude,
       );

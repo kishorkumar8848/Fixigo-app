@@ -32,6 +32,17 @@ exports.acceptJob = async (req, res) => {
     const jobId = req.params.jobId;
     const technicianId = req.user.id;
 
+    // Check technician's verification status
+    const techRes = await pool.query('SELECT verification_status FROM technicians WHERE id = $1', [technicianId]);
+    if (techRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Technician not found' });
+    }
+    if (techRes.rows[0].verification_status !== 'verified') {
+      return res.status(403).json({ 
+        message: 'You must verify both Aadhaar Card and PAN Card in your profile before you can accept jobs.' 
+      });
+    }
+
     // Verify job belongs to technician OR is unassigned
     const jobsResult = await pool.query('SELECT * FROM jobs WHERE id = $1 AND (technician_id = $2 OR technician_id IS NULL)', [jobId, technicianId]);
     if (jobsResult.rows.length === 0) {

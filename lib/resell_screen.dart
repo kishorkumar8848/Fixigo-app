@@ -6,6 +6,9 @@ import 'resale_valuation_engine.dart';
 import 'resell_schedule_screen.dart';
 import 'session.dart';
 import 'location_picker_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'api.dart';
 
 class ResellScreen extends StatefulWidget {
   const ResellScreen({super.key});
@@ -19,6 +22,17 @@ class _ResellScreenState extends State<ResellScreen> {
   String _condition = 'Good';
   bool _showValuation = false;
   bool _locationSupported = true;
+  File? _selectedImage;
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
+  }
 
   final _locationKeywords = const ['chennai'];
   final _appliances = const [
@@ -157,29 +171,78 @@ class _ResellScreenState extends State<ResellScreen> {
             ? _appliances[_selectedAppliance!].name
             : 'Other');
 
-    ResellScheduleRepository.addSchedule(
-      appliance: selectedApplianceName,
-      scheduledDate: selectedDate,
-      address: _locationController.text.trim(),
-    );
-
-    if (!mounted) return;
-
-    await showDialog<void>(
+    // Show loading
+    showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Pickup Scheduled'),
-        content: const Text(
-          'Your pickup is scheduled. Our delivery partner will contact you shortly.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
     );
+
+    try {
+      final fields = {
+        'customerId': Session.userId?.toString() ?? '1',
+        'appliance_type': selectedApplianceName,
+        'condition_description': _condition,
+        'expected_price': (((_valuationResult?.minValue ?? 0) + (_valuationResult?.maxValue ?? 0)) ~/ 2).toString(),
+        'brand': _brandController.text.trim(),
+        'age_years': (DateTime.now().year - (int.tryParse(_yearController.text.trim()) ?? DateTime.now().year)).toString(),
+        'original_price': _originalPriceController.text.trim(),
+        'estimated_value': (((_valuationResult?.minValue ?? 0) + (_valuationResult?.maxValue ?? 0)) ~/ 2).toString(),
+        'working_status': _workingStatus,
+        'cosmetic_condition': _cosmeticCondition,
+        'has_bill': _hasBill.toString(),
+        'has_box': _hasBox.toString(),
+        'has_accessories': _hasAccessories.toString(),
+        'address': _locationController.text.trim(),
+      };
+
+      Map<String, dynamic> resp;
+      if (_selectedImage != null) {
+        resp = await Api.multipartPost('/resale', fields, 'image', _selectedImage!.path);
+      } else {
+        resp = await Api.post('/resale', fields);
+      }
+
+      if (mounted) {
+        Navigator.pop(context); // Pop loading
+      }
+
+      if (resp['status'] == 201 || resp['status'] == 200) {
+        ResellScheduleRepository.addSchedule(
+          appliance: selectedApplianceName,
+          scheduledDate: selectedDate,
+          address: _locationController.text.trim(),
+        );
+
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Success'),
+              content: const Text(
+                'Your pickup is scheduled and resale request submitted successfully to the admin portal.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        final msg = resp['data']?['message'] ?? 'Failed to submit request';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $msg')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Pop loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Submission error: $e')));
+      }
+    }
   }
 
   void _openAllAppliances() async {
@@ -365,14 +428,42 @@ class _ResellScreenState extends State<ResellScreen> {
             const Text('Add at least 2 photos for better valuation',
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                _UploadBox(label: 'Front view', isDashed: true),
-                const SizedBox(width: 10),
-                _UploadBox(label: 'Side view', isDashed: true),
-                const SizedBox(width: 10),
-                _UploadBox(label: 'More', isDashed: false),
-              ],
+            GestureDetector(
+              onTap: _pickImage,
+              child: _selectedImage != null
+                  ? Container(
+                      height: 120,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.5)),
+                        image: DecorationImage(
+                          image: FileImage(_selectedImage!),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: Container(
+                          margin: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.edit_rounded, color: Colors.white, size: 16),
+                        ),
+                      ),
+                    )
+                  : Row(
+                      children: [
+                        _UploadBox(label: 'Front view', isDashed: true),
+                        const SizedBox(width: 10),
+                        _UploadBox(label: 'Side view', isDashed: true),
+                        const SizedBox(width: 10),
+                        _UploadBox(label: 'More', isDashed: false),
+                      ],
+                    ),
             ),
             const SizedBox(height: 24),
             if (_manualAppliance != null) ...[

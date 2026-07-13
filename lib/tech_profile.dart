@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'role_selection.dart';
 import 'api.dart';
 import 'session.dart';
+import 'location_picker_screen.dart';
 
 class TechProfileScreen extends StatefulWidget {
   const TechProfileScreen({super.key});
@@ -24,6 +27,24 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
   int _totalJobs = 0;
   double _totalEarnings = 0.0;
   String _address = '';
+  List<dynamic> _reviews = [];
+  String _aadharCardUrl = '';
+  String _aadharVerificationStatus = 'unuploaded';
+  String _panCardUrl = '';
+  String _panVerificationStatus = 'unuploaded';
+  String _workSchedule = '';
+
+  final List<String> _availableSkills = const [
+    'Air Conditioner',
+    'Refrigerator',
+    'Washing Machine',
+    'Television',
+    'Laptop & PC',
+    'Water Purifier',
+    'Water Heater / Geyser',
+    'Kitchen Appliances',
+    'Electrical Services'
+  ];
 
   @override
   void initState() {
@@ -50,6 +71,12 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
           _totalJobs = int.tryParse(data['totalJobs']?.toString() ?? '0') ?? 0;
           _totalEarnings = double.tryParse(data['totalEarnings']?.toString() ?? '0') ?? 0.0;
           _address = data['address'] ?? '';
+          _reviews = data['reviews'] ?? [];
+          _aadharCardUrl = data['aadharCardUrl'] ?? '';
+          _aadharVerificationStatus = data['aadharVerificationStatus'] ?? 'unuploaded';
+          _panCardUrl = data['panCardUrl'] ?? '';
+          _panVerificationStatus = data['panVerificationStatus'] ?? 'unuploaded';
+          _workSchedule = data['workSchedule'] ?? '';
           _isLoading = false;
         });
       } else {
@@ -60,102 +87,26 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
     }
   }
 
-  void _showEditAddressDialog() {
-    final addressController = TextEditingController(text: _address);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Service Address'),
-        content: TextField(
-          controller: addressController,
-          decoration: InputDecoration(
-            hintText: 'Enter your service address',
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.my_location_rounded, color: AppColors.primary),
-              onPressed: () => _requestAndFetchLocation(addressController),
-            ),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _updateProfileAddress(addressController.text.trim());
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _requestAndFetchLocation(TextEditingController controller) async {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.location_on_rounded, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Location Permission'),
-          ],
-        ),
-        content: const Text(
-          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Deny'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showLocationFetchingProgress(controller);
-            },
-            child: const Text('Allow'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLocationFetchingProgress(TextEditingController controller) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Expanded(child: Text('Fetching current GPS coordinates...')),
-          ],
+  Future<void> _showEditAddressDialog() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
         ),
       ),
     );
 
-    Future.delayed(const Duration(seconds: 1), () {
-      Navigator.pop(context);
-      final neighborhoods = [
-        'Indiranagar, Bengaluru',
-        'Koramangala, Bengaluru',
-        'HSR Layout, Bengaluru',
-        'Jayanagar, Bengaluru',
-        'Whitefield, Bengaluru',
-      ];
-      final randomNeighborhood = neighborhoods[DateTime.now().millisecond % neighborhoods.length];
-      controller.text = randomNeighborhood;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auto-filled current location: $randomNeighborhood')),
-      );
-    });
+    if (result != null) {
+      setState(() {
+        _address = result.address;
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+      });
+      _updateProfileAddress(result.address);
+    }
   }
 
   Future<void> _updateProfileAddress(String newAddress) async {
@@ -166,6 +117,9 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
         'email': _email,
         'phone': _phone,
         'address': newAddress,
+        'skills': _skills.join(', '),
+        'experience': _experience,
+        'workSchedule': _workSchedule,
       });
       if (resp['status'] == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -185,6 +139,168 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
       );
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _uploadProof(String type) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final resp = await Api.multipartPost(
+        '/auth/technician/upload-proof',
+        {'type': type},
+        'id_proof',
+        pickedFile.path,
+      );
+
+      if (resp['status'] == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${type == 'aadhar' ? 'Aadhaar' : 'PAN'} Card uploaded successfully!')),
+        );
+        await _fetchProfile();
+      } else {
+        final message = resp['data']['message'] ?? 'Failed to upload proof';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _showPersonalDetailsDialog() {
+    final nameController = TextEditingController(text: _name);
+    final phoneController = TextEditingController(text: _phone);
+    final emailController = TextEditingController(text: _email);
+    final expController = TextEditingController(text: _experience.toString());
+    List<String> tempSkills = List.from(_skills);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Personal Details', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Name')),
+                TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
+                TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Phone')),
+                TextField(controller: expController, decoration: const InputDecoration(labelText: 'Experience (Years)'), keyboardType: TextInputType.number),
+                const SizedBox(height: 16),
+                const Text('Select Skills:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _availableSkills.map((s) {
+                    final selected = tempSkills.contains(s);
+                    return ChoiceChip(
+                      label: Text(s, style: const TextStyle(fontSize: 11)),
+                      selected: selected,
+                      onSelected: (val) {
+                        setDialogState(() {
+                          if (val) {
+                            tempSkills.add(s);
+                          } else {
+                            tempSkills.remove(s);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                setState(() => _isLoading = true);
+                try {
+                  final resp = await Api.put('/auth/technician/profile/${Session.userId}', {
+                    'name': nameController.text.trim(),
+                    'email': emailController.text.trim(),
+                    'phone': phoneController.text.trim(),
+                    'address': _address,
+                    'skills': tempSkills.join(', '),
+                    'experience': int.tryParse(expController.text.trim()) ?? 0,
+                    'workSchedule': _workSchedule,
+                  });
+                  if (resp['status'] == 200) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated successfully')));
+                    _fetchProfile();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(resp['data']['message'] ?? 'Failed to update')));
+                    setState(() => _isLoading = false);
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  setState(() => _isLoading = false);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWorkScheduleDialog() {
+    final scheduleController = TextEditingController(text: _workSchedule.isNotEmpty ? _workSchedule : '9:00 AM - 6:00 PM (Mon-Sat)');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Work Schedule', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: scheduleController,
+          decoration: const InputDecoration(hintText: 'e.g. 9:00 AM - 6:00 PM (Mon-Sat)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              setState(() => _isLoading = true);
+              try {
+                final resp = await Api.put('/auth/technician/profile/${Session.userId}', {
+                  'name': _name,
+                  'email': _email,
+                  'phone': _phone,
+                  'address': _address,
+                  'skills': _skills.join(', '),
+                  'experience': _experience,
+                  'workSchedule': scheduleController.text.trim(),
+                });
+                if (resp['status'] == 200) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work schedule updated')));
+                  _fetchProfile();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(resp['data']['message'] ?? 'Failed to update')));
+                  setState(() => _isLoading = false);
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                setState(() => _isLoading = false);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -308,13 +424,19 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
               // Verification
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _VerificationCard(status: _verificationStatus),
+                child: _VerificationCard(
+                  status: _verificationStatus,
+                  aadharStatus: _aadharVerificationStatus,
+                  panStatus: _panVerificationStatus,
+                  onUploadAadhar: () => _uploadProof('aadhar'),
+                  onUploadPan: () => _uploadProof('pan'),
+                ),
               ),
               const SizedBox(height: 16),
               // Reviews
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _ReviewsCard(),
+                child: _ReviewsCard(reviews: _reviews),
               ),
               const SizedBox(height: 16),
               // Menu
@@ -325,6 +447,13 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
                   ('Bank Account', Icons.account_balance_rounded),
                   ('Work Schedule', Icons.calendar_today_rounded),
                 ],
+                onItemTap: (item) {
+                  if (item == 'Personal Details') {
+                    _showPersonalDetailsDialog();
+                  } else if (item == 'Work Schedule') {
+                    _showWorkScheduleDialog();
+                  }
+                },
               ),
               const SizedBox(height: 12),
               _MenuGroup(
@@ -334,25 +463,21 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
                   ('Report an Issue', Icons.flag_rounded),
                   ('Terms & Conditions', Icons.description_rounded),
                 ],
+                onItemTap: (item) {},
               ),
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    Session.token = null;
-                    Session.role = null;
-                    Session.userId = null;
-                    Session.name = null;
-                    Session.email = null;
-                    Session.address = null;
-                    Session.latitude = null;
-                    Session.longitude = null;
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const RoleSelectionScreen()),
-                    );
+                  onPressed: () async {
+                    await Session.clear();
+                    if (context.mounted) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RoleSelectionScreen()),
+                      );
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.error,
@@ -532,17 +657,86 @@ class _SkillsCard extends StatelessWidget {
 
 class _VerificationCard extends StatelessWidget {
   final String status;
-  const _VerificationCard({required this.status});
+  final String aadharStatus;
+  final String panStatus;
+  final VoidCallback onUploadAadhar;
+  final VoidCallback onUploadPan;
+
+  const _VerificationCard({
+    required this.status,
+    required this.aadharStatus,
+    required this.panStatus,
+    required this.onUploadAadhar,
+    required this.onUploadPan,
+  });
+
+  Widget _buildDocRow(String title, String docStatus, VoidCallback onUpload) {
+    Color statusColor = Colors.grey;
+    IconData icon = Icons.help_outline_rounded;
+    Widget? actionWidget;
+
+    if (docStatus == 'verified') {
+      statusColor = AppColors.success;
+      icon = Icons.check_circle_rounded;
+    } else if (docStatus == 'pending') {
+      statusColor = Colors.orange;
+      icon = Icons.hourglass_empty_rounded;
+      actionWidget = const Text('Awaiting Verification',
+          style: TextStyle(
+              fontSize: 11, fontStyle: FontStyle.italic, color: Colors.orange));
+    } else if (docStatus == 'rejected') {
+      statusColor = AppColors.error;
+      icon = Icons.cancel_rounded;
+      actionWidget = TextButton.icon(
+        onPressed: onUpload,
+        icon: const Icon(Icons.upload_file_rounded, size: 14),
+        label: const Text('Re-upload', style: TextStyle(fontSize: 11)),
+        style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      );
+    } else {
+      statusColor = AppColors.textTertiary;
+      icon = Icons.radio_button_unchecked_rounded;
+      actionWidget = TextButton.icon(
+        onPressed: onUpload,
+        icon: const Icon(Icons.upload_file_rounded, size: 14),
+        label: const Text('Upload', style: TextStyle(fontSize: 11)),
+        style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: statusColor, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                if (docStatus == 'rejected')
+                  const Text('Rejected by Admin',
+                      style: TextStyle(fontSize: 10, color: AppColors.error)),
+              ],
+            ),
+          ),
+          if (actionWidget != null) actionWidget,
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final docs = [
-      ('Aadhar Card', true),
-      ('PAN Card', true),
-      ('Police Verification', status == 'verified'),
-      ('Skill Certificate', status == 'verified'),
-    ];
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -566,21 +760,10 @@ class _VerificationCard extends StatelessWidget {
                 StatusBadge.warning('Pending Approval'),
             ],
           ),
-          const SizedBox(height: 12),
-          ...docs.map((d) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      d.$2 ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                      color: d.$2 ? AppColors.success : AppColors.error,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(d.$1, style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
-              )),
+          const SizedBox(height: 16),
+          _buildDocRow('Aadhaar Card', aadharStatus, onUploadAadhar),
+          const Divider(height: 12),
+          _buildDocRow('PAN Card', panStatus, onUploadPan),
         ],
       ),
     );
@@ -588,14 +771,9 @@ class _VerificationCard extends StatelessWidget {
 }
 
 class _ReviewsCard extends StatelessWidget {
-  final _reviews = const [
-    (
-      'Priya Sharma',
-      '5.0',
-      'Excellent service! Rajesh was very professional and fixed the AC perfectly.'
-    ),
-    ('Karan Mehta', '4.5', 'Good work, came on time. Would recommend.'),
-  ];
+  final List<dynamic> reviews;
+
+  const _ReviewsCard({required this.reviews});
 
   @override
   Widget build(BuildContext context) {
@@ -611,10 +789,10 @@ class _ReviewsCard extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Recent Reviews',
+            children: const [
+              Text('Recent Reviews',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const Text('View all',
+              Text('View all',
                   style: TextStyle(
                       color: AppColors.primary,
                       fontSize: 13,
@@ -622,7 +800,28 @@ class _ReviewsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          ..._reviews.map((r) => Padding(
+          if (reviews.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'No reviews yet. Reviews from customers will appear here.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            ...reviews.map((r) {
+              final name = r['customer_name'] ?? 'Customer';
+              final rating = r['rating']?.toString() ?? '5.0';
+              final comment = r['comment'] ?? '';
+
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,37 +831,41 @@ class _ReviewsCard extends StatelessWidget {
                         Container(
                           width: 36,
                           height: 36,
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                               color: AppColors.primarySurface,
                               shape: BoxShape.circle),
                           child: Center(
-                              child: Text(r.$1[0],
+                              child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'C',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       color: AppColors.primary))),
                         ),
                         const SizedBox(width: 10),
-                        Text(r.$1,
+                        Text(name,
                             style: const TextStyle(
                                 fontWeight: FontWeight.w600, fontSize: 13)),
                         const Spacer(),
                         Icon(Icons.star_rounded,
                             color: Colors.amber[600], size: 14),
                         const SizedBox(width: 2),
-                        Text(r.$2,
+                        Text(rating,
                             style: const TextStyle(
                                 fontWeight: FontWeight.w700, fontSize: 12)),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(r.$3,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            height: 1.4)),
+                    if (comment.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(comment,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              height: 1.4)),
+                    ],
                   ],
                 ),
-              )),
+              );
+            }),
         ],
       ),
     );
@@ -672,8 +875,13 @@ class _ReviewsCard extends StatelessWidget {
 class _MenuGroup extends StatelessWidget {
   final String title;
   final List<(String, IconData)> items;
+  final ValueChanged<String>? onItemTap;
 
-  const _MenuGroup({required this.title, required this.items});
+  const _MenuGroup({
+    required this.title,
+    required this.items,
+    this.onItemTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -718,7 +926,7 @@ class _MenuGroup extends StatelessWidget {
                         size: 14, color: AppColors.textTertiary),
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    onTap: () {},
+                    onTap: () => onItemTap?.call(item.$1),
                   ),
                   if (i < items.length - 1)
                     const Padding(

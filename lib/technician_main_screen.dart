@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
-import 'common_widgets.dart';
 import 'technician_dashboard_screen.dart';
 import 'job_request_screen.dart';
 import 'active_job_screen.dart';
 import 'tech_earning_screen.dart';
 import 'tech_profile.dart';
+import 'api.dart';
 
 class TechnicianMainScreen extends StatefulWidget {
   const TechnicianMainScreen({super.key});
+
+  static final ValueNotifier<int> newJobsCount = ValueNotifier<int>(0);
 
   @override
   State<TechnicianMainScreen> createState() => _TechnicianMainScreenState();
@@ -25,6 +27,17 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
     TechProfileScreen(),
   ];
 
+  Future<void> _refreshCount() async {
+    try {
+      final resp = await Api.get('/technician/jobs');
+      if (resp['status'] == 200 && resp['data'] is List) {
+        final List<dynamic> jobs = resp['data'];
+        final count = jobs.where((j) => j['status'] == 'assigned').length;
+        TechnicianMainScreen.newJobsCount.value = count;
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -32,9 +45,18 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: _TechBottomNav(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
+      bottomNavigationBar: ValueListenableBuilder<int>(
+        valueListenable: TechnicianMainScreen.newJobsCount,
+        builder: (context, count, _) {
+          return _TechBottomNav(
+            currentIndex: _currentIndex,
+            newJobsCount: count,
+            onTap: (i) {
+              setState(() => _currentIndex = i);
+              _refreshCount();
+            },
+          );
+        },
       ),
     );
   }
@@ -43,14 +65,23 @@ class _TechnicianMainScreenState extends State<TechnicianMainScreen> {
 class _TechBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final int newJobsCount;
 
-  const _TechBottomNav({required this.currentIndex, required this.onTap});
+  const _TechBottomNav({
+    required this.currentIndex,
+    required this.onTap,
+    required this.newJobsCount,
+  });
 
   @override
   Widget build(BuildContext context) {
     final items = [
       _TechNavItem(Icons.dashboard_rounded, 'Dashboard'),
-      _TechNavItem(Icons.work_rounded, 'Jobs', badge: '3'),
+      _TechNavItem(
+        Icons.work_rounded,
+        'Jobs',
+        badge: newJobsCount > 0 ? '$newJobsCount' : null,
+      ),
       _TechNavItem(Icons.build_rounded, 'Active'),
       _TechNavItem(Icons.account_balance_wallet_rounded, 'Earnings'),
       _TechNavItem(Icons.person_rounded, 'Profile'),

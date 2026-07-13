@@ -15,7 +15,7 @@ class Api {
 
   // Toggle this to false to connect to your live Render backend,
   // or set it to true for local emulator debugging.
-  static const bool useLocalBackend = false;
+  static const bool useLocalBackend = true;
 
   static String resolveBaseUrl({String? override, required bool isWeb, required TargetPlatform platform}) {
     if (override != null && override.isNotEmpty) {

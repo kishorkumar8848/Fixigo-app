@@ -25,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _activeBooking;
   bool _isLoadingBooking = true;
 
+  String? _filterCategory;
+  double? _filterMaxPrice;
+  double? _filterMinRating;
+
   @override
   void initState() {
     super.initState();
@@ -65,8 +69,335 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showSearchSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        String searchQuery = '';
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            final filteredCategories = _allCategories
+                .where((c) => c.label.toLowerCase().contains(searchQuery.toLowerCase()))
+                .toList();
+
+            final filteredRepairs = _allRepairs
+                .where((r) => r.name.toLowerCase().contains(searchQuery.toLowerCase()) || r.category.toLowerCase().contains(searchQuery.toLowerCase()))
+                .toList();
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.8,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            hintText: 'Search services, appliances...',
+                            prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textTertiary),
+                            suffixIcon: searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded, color: AppColors.textTertiary),
+                                    onPressed: () {
+                                      setStateSheet(() {
+                                        searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.primary),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          onChanged: (val) {
+                            setStateSheet(() {
+                              searchQuery = val;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: filteredCategories.isEmpty && filteredRepairs.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.search_off_rounded, color: Colors.grey.shade400, size: 48),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No services found for "$searchQuery"',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView(
+                            children: [
+                              if (filteredCategories.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  child: Text('CATEGORIES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textTertiary)),
+                                ),
+                                ...filteredCategories.map((cat) {
+                                  return ListTile(
+                                    leading: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: cat.color.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(cat.icon, color: cat.color, size: 20),
+                                    ),
+                                    title: Text(cat.label.replaceAll('\n', ' ')),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      widget.onCategorySelected?.call(cat.label.replaceAll('\n', ' '));
+                                    },
+                                  );
+                                }),
+                                const SizedBox(height: 16),
+                              ],
+                              if (filteredRepairs.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  child: Text('POPULAR REPAIRS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textTertiary)),
+                                ),
+                                ...filteredRepairs.map((r) {
+                                  return ListTile(
+                                    leading: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: r.color.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(r.icon, color: r.color, size: 20),
+                                    ),
+                                    title: Text(r.name),
+                                    subtitle: Text(r.category),
+                                    trailing: Text(
+                                      r.price,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      widget.onPopularSelected?.call(r.category, r.name.replaceAll('\n', ' '));
+                                    },
+                                  );
+                                }),
+                              ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showFilterSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        String? tempCategory = _filterCategory;
+        double? tempMaxPrice = _filterMaxPrice;
+        double? tempMinRating = _filterMinRating;
+
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Filter Services',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setStateSheet(() {
+                            tempCategory = null;
+                            tempMaxPrice = null;
+                            tempMinRating = null;
+                          });
+                        },
+                        child: const Text('Reset All'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _allCategories.map((cat) {
+                      final cleanLabel = cat.label.replaceAll('\n', ' ');
+                      final isSelected = tempCategory == cleanLabel;
+                      return ChoiceChip(
+                        label: Text(cleanLabel),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setStateSheet(() {
+                            tempCategory = selected ? cleanLabel : null;
+                          });
+                        },
+                        selectedColor: AppColors.primarySurface,
+                        backgroundColor: Colors.grey.shade100,
+                        labelStyle: TextStyle(
+                          color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Max Price', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(tempMaxPrice == null ? 'Any Price' : 'Up to ₹${tempMaxPrice!.toInt()}',
+                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  Slider(
+                    value: tempMaxPrice ?? 800,
+                    min: 200,
+                    max: 800,
+                    divisions: 6,
+                    activeColor: AppColors.primary,
+                    inactiveColor: Colors.grey.shade200,
+                    onChanged: (val) {
+                      setStateSheet(() {
+                        tempMaxPrice = val == 800 ? null : val;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Minimum Rating', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [4.5, 4.7, 4.8].map((rating) {
+                      final isSelected = tempMinRating == rating;
+                      return Container(
+                        margin: const EdgeInsets.only(right: 10),
+                        child: ChoiceChip(
+                          avatar: Icon(Icons.star_rounded, color: isSelected ? AppColors.primary : Colors.amber, size: 16),
+                          label: Text('$rating+ Stars'),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setStateSheet(() {
+                              tempMinRating = selected ? rating : null;
+                            });
+                          },
+                          selectedColor: AppColors.primarySurface,
+                          backgroundColor: Colors.grey.shade100,
+                          labelStyle: TextStyle(
+                            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _filterCategory = tempCategory;
+                          _filterMaxPrice = tempMaxPrice;
+                          _filterMinRating = tempMinRating;
+                        });
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Apply Filters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filteredRepairs = _allRepairs.where((r) {
+      if (_filterCategory != null) {
+        final catLower = _filterCategory!.toLowerCase();
+        final repCatLower = r.category.toLowerCase();
+        if (!repCatLower.contains(catLower) && !catLower.contains(repCatLower) &&
+            !(catLower.contains('ac') && repCatLower.contains('ac')) &&
+            !(catLower.contains('tv') && repCatLower.contains('tv'))) {
+          return false;
+        }
+      }
+      if (_filterMaxPrice != null) {
+        final priceVal = double.tryParse(r.price.replaceAll('₹', '')) ?? 0.0;
+        if (priceVal > _filterMaxPrice!) return false;
+      }
+      if (_filterMinRating != null) {
+        if (r.rating < _filterMinRating!) return false;
+      }
+      return true;
+    }).toList();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
@@ -77,9 +408,42 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             sliver: SliverToBoxAdapter(
-              child: _SearchBar(),
+              child: _SearchBar(
+                onSearchTap: () => _showSearchSheet(context),
+                onFilterTap: () => _showFilterSheet(context),
+              ),
             ),
           ),
+          // ── Active Filter Chips ─────────────────────────────────────────────
+          if (_filterCategory != null || _filterMaxPrice != null || _filterMinRating != null)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              sliver: SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      if (_filterCategory != null)
+                        _FilterChip(
+                          label: _filterCategory!,
+                          onDelete: () => setState(() => _filterCategory = null),
+                        ),
+                      if (_filterMaxPrice != null)
+                        _FilterChip(
+                          label: 'Max ₹${_filterMaxPrice!.toInt()}',
+                          onDelete: () => setState(() => _filterMaxPrice = null),
+                        ),
+                      if (_filterMinRating != null)
+                        _FilterChip(
+                          label: '${_filterMinRating!}+ Stars',
+                          onDelete: () => setState(() => _filterMinRating = null),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // ── Active booking banner ───────────────────────────────────────────
           if (!_isLoadingBooking && _activeBooking != null)
             SliverPadding(
@@ -116,6 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SectionHeader(title: 'Popular Repairs'),
                   const SizedBox(height: 16),
                   _PopularRepairs(
+                    repairs: filteredRepairs,
                     onPopularSelected: (cat, issue) => widget.onPopularSelected?.call(cat, issue),
                   ),
                 ],
@@ -383,7 +748,135 @@ class _HomeHeaderState extends State<_HomeHeader> {
 }
 
 // ── Search Bar ────────────────────────────────────────────────────────────────
+// ── Master Lists ─────────────────────────────────────────────────────────────
+const List<_Cat> _allCategories = [
+  _Cat(
+    'AC Repair',
+    Icons.ac_unit_rounded,
+    Color(0xFF1565C0),
+    'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'Washing\nMachine',
+    Icons.local_laundry_service_rounded,
+    Color(0xFF00897B),
+    'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'Refrigerator',
+    Icons.kitchen_rounded,
+    Color(0xFF6A1B9A),
+    'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'Microwave',
+    Icons.microwave_rounded,
+    Color(0xFFE65100),
+    'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'TV Repair',
+    Icons.tv_rounded,
+    Color(0xFF0277BD),
+    'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'Water\nPurifier',
+    Icons.water_drop_rounded,
+    Color(0xFF2E7D32),
+    'https://images.unsplash.com/photo-1618579895756-65b827ac4f53?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Cat(
+    'Geyser',
+    Icons.water_rounded,
+    Color(0xFFC62828),
+    'https://images.unsplash.com/photo-1584622781564-1d987f7333c1?w=500&auto=format&fit=crop&q=60',
+  ),
+];
+
+const List<_Repair> _allRepairs = [
+  _Repair(
+    'AC Gas Refill',
+    'AC & Air Coolers',
+    '₹499',
+    Icons.ac_unit_rounded,
+    Color(0xFF1565C0),
+    '45 min',
+    4.8,
+    'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Repair(
+    'Washing Machine\nService',
+    'Washing Machines',
+    '₹349',
+    Icons.local_laundry_service_rounded,
+    Color(0xFF00897B),
+    '60 min',
+    4.7,
+    'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
+  ),
+  _Repair(
+    'Refrigerator\nCooling Fix',
+    'Refrigerators',
+    '₹599',
+    Icons.kitchen_rounded,
+    Color(0xFF6A1B9A),
+    '90 min',
+    4.9,
+    'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
+  ),
+];
+
+// ── Filter Chip ───────────────────────────────────────────────────────────────
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onDelete;
+
+  const _FilterChip({required this.label, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primarySurface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onDelete,
+            child: const Icon(
+              Icons.close_rounded,
+              color: AppColors.primary,
+              size: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Search Bar ────────────────────────────────────────────────────────────────
 class _SearchBar extends StatelessWidget {
+  final VoidCallback onSearchTap;
+  final VoidCallback onFilterTap;
+
+  const _SearchBar({required this.onSearchTap, required this.onFilterTap});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -401,31 +894,44 @@ class _SearchBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const SizedBox(width: 16),
-          const Icon(Icons.search_rounded, color: AppColors.textTertiary),
-          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Search services, appliances...',
-              style: TextStyle(
-                color: AppColors.textTertiary,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
+            child: GestureDetector(
+              onTap: onSearchTap,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: const [
+                  SizedBox(width: 16),
+                  Icon(Icons.search_rounded, color: AppColors.textTertiary),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Search services, appliances...',
+                      style: TextStyle(
+                        color: AppColors.textTertiary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          Container(
-            margin: const EdgeInsets.all(8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.primarySurface,
-              borderRadius: BorderRadius.circular(8),
+          GestureDetector(
+            onTap: onFilterTap,
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primarySurface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('Filter',
+                  style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
             ),
-            child: const Text('Filter',
-                style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -439,68 +945,26 @@ class _ServiceCategories extends StatelessWidget {
 
   const _ServiceCategories({this.onCategorySelected});
 
-  final _cats = const [
-    _Cat(
-      'AC Repair',
-      Icons.ac_unit_rounded,
-      Color(0xFF1565C0),
-      'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'Washing\nMachine',
-      Icons.local_laundry_service_rounded,
-      Color(0xFF00897B),
-      'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'Refrigerator',
-      Icons.kitchen_rounded,
-      Color(0xFF6A1B9A),
-      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'Microwave',
-      Icons.microwave_rounded,
-      Color(0xFFE65100),
-      'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'TV Repair',
-      Icons.tv_rounded,
-      Color(0xFF0277BD),
-      'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'Water\nPurifier',
-      Icons.water_drop_rounded,
-      Color(0xFF2E7D32),
-      'https://images.unsplash.com/photo-1618579895756-65b827ac4f53?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'Geyser',
-      Icons.water_rounded,
-      Color(0xFFC62828),
-      'https://images.unsplash.com/photo-1584622781564-1d987f7333c1?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Cat(
-      'More',
-      Icons.grid_view_rounded,
-      Color(0xFF546E7A),
-      'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=500&auto=format&fit=crop&q=60',
-    ),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final cats = [
+      ..._allCategories,
+      const _Cat(
+        'More',
+        Icons.grid_view_rounded,
+        Color(0xFF546E7A),
+        'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=500&auto=format&fit=crop&q=60',
+      ),
+    ];
     return SizedBox(
       height: 96,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         scrollDirection: Axis.horizontal,
-        itemCount: _cats.length,
+        itemCount: cats.length,
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (ctx, i) {
-          final cat = _cats[i];
+          final cat = cats[i];
           return GestureDetector(
             onTap: () => onCategorySelected?.call(cat.label.replaceAll('\n', ' ')),
             child: Column(
@@ -562,54 +1026,42 @@ class _Cat {
 
 // ── Popular Repairs ───────────────────────────────────────────────────────────
 class _PopularRepairs extends StatelessWidget {
+  final List<_Repair> repairs;
   final Function(String, String)? onPopularSelected;
 
-  const _PopularRepairs({this.onPopularSelected});
-
-  final _repairs = const [
-    _Repair(
-      'AC Gas Refill',
-      'AC & Air Coolers',
-      '₹499',
-      Icons.ac_unit_rounded,
-      Color(0xFF1565C0),
-      '45 min',
-      4.8,
-      'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Repair(
-      'Washing Machine\nService',
-      'Washing Machines',
-      '₹349',
-      Icons.local_laundry_service_rounded,
-      Color(0xFF00897B),
-      '60 min',
-      4.7,
-      'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=500&auto=format&fit=crop&q=60',
-    ),
-    _Repair(
-      'Refrigerator\nCooling Fix',
-      'Refrigerators',
-      '₹599',
-      Icons.kitchen_rounded,
-      Color(0xFF6A1B9A),
-      '90 min',
-      4.9,
-      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500&auto=format&fit=crop&q=60',
-    ),
-  ];
+  const _PopularRepairs({
+    required this.repairs,
+    this.onPopularSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (repairs.isEmpty) {
+      return Container(
+        height: 100,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.filter_list_off_rounded, color: AppColors.textTertiary, size: 36),
+            SizedBox(height: 8),
+            Text(
+              'No repairs match active filters.',
+              style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       height: 180,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         scrollDirection: Axis.horizontal,
-        itemCount: _repairs.length,
+        itemCount: repairs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (ctx, i) {
-          final r = _repairs[i];
+          final r = repairs[i];
           return GestureDetector(
             onTap: () => onPopularSelected?.call(r.category, r.name.replaceAll('\n', ' ')),
             child: Container(

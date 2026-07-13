@@ -35,7 +35,9 @@ exports.getCustomerDetails = async (req, res) => {
 exports.getAllTechnicians = async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, phone, skills, experience, verification_status, rating, total_jobs, id_proof_url, created_at FROM technicians ORDER BY created_at DESC'
+      `SELECT id, name, email, phone, skills, experience, verification_status, rating, total_jobs, 
+              aadhar_card_url, aadhar_verification_status, pan_card_url, pan_verification_status, created_at 
+       FROM technicians ORDER BY created_at DESC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -44,38 +46,85 @@ exports.getAllTechnicians = async (req, res) => {
   }
 };
 
-exports.verifyTechnician = async (req, res) => {
+exports.verifyTechnicianProof = async (req, res) => {
   try {
-    const technicianId = req.params.technicianId;
-    const result = await pool.query('SELECT * FROM technicians WHERE id = $1', [technicianId]);
-    if (result.rows.length === 0) {
+    const { technicianId, proofType } = req.params;
+
+    if (proofType !== 'aadhar' && proofType !== 'pan') {
+      return res.status(400).json({ message: 'Invalid proof type. Must be aadhar or pan.' });
+    }
+
+    const techResult = await pool.query('SELECT * FROM technicians WHERE id = $1', [technicianId]);
+    if (techResult.rows.length === 0) {
       return res.status(404).json({ message: 'Technician not found' });
     }
 
-    await pool.query('UPDATE technicians SET verification_status = $1 WHERE id = $2', ['verified', technicianId]);
-    res.json({ message: 'Technician verified successfully' });
+    const tech = techResult.rows[0];
+
+    // Update specific proof verification status
+    if (proofType === 'aadhar') {
+      await pool.query("UPDATE technicians SET aadhar_verification_status = 'verified' WHERE id = $1", [technicianId]);
+      tech.aadhar_verification_status = 'verified';
+    } else {
+      await pool.query("UPDATE technicians SET pan_verification_status = 'verified' WHERE id = $1", [technicianId]);
+      tech.pan_verification_status = 'verified';
+    }
+
+    // If BOTH are verified, set overall status to verified
+    if (tech.aadhar_verification_status === 'verified' && tech.pan_verification_status === 'verified') {
+      await pool.query("UPDATE technicians SET verification_status = 'verified' WHERE id = $1", [technicianId]);
+    } else {
+      await pool.query("UPDATE technicians SET verification_status = 'pending' WHERE id = $1", [technicianId]);
+    }
+
+    res.json({ message: `${proofType === 'aadhar' ? 'Aadhaar' : 'PAN'} Card verified successfully` });
   } catch (err) {
-    console.error('Verify technician error:', err);
-    res.status(500).json({ message: 'Server error verifying technician' });
+    console.error('Verify technician proof error:', err);
+    res.status(500).json({ message: 'Server error verifying proof' });
   }
 };
 
-exports.rejectTechnician = async (req, res) => {
+exports.rejectTechnicianProof = async (req, res) => {
   try {
-    const technicianId = req.params.technicianId;
-    await pool.query('UPDATE technicians SET verification_status = $1 WHERE id = $2', ['rejected', technicianId]);
-    res.json({ message: 'Technician rejected successfully' });
+    const { technicianId, proofType } = req.params;
+
+    if (proofType !== 'aadhar' && proofType !== 'pan') {
+      return res.status(400).json({ message: 'Invalid proof type. Must be aadhar or pan.' });
+    }
+
+    const techResult = await pool.query('SELECT * FROM technicians WHERE id = $1', [technicianId]);
+    if (techResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Technician not found' });
+    }
+
+    // Update specific proof status to rejected
+    if (proofType === 'aadhar') {
+      await pool.query("UPDATE technicians SET aadhar_verification_status = 'rejected' WHERE id = $1", [technicianId]);
+    } else {
+      await pool.query("UPDATE technicians SET pan_verification_status = 'rejected' WHERE id = $1", [technicianId]);
+    }
+
+    // If any is rejected, overall status becomes rejected
+    await pool.query("UPDATE technicians SET verification_status = 'rejected' WHERE id = $1", [technicianId]);
+
+    res.json({ message: `${proofType === 'aadhar' ? 'Aadhaar' : 'PAN'} Card rejected successfully` });
   } catch (err) {
-    console.error('Reject technician error:', err);
-    res.status(500).json({ message: 'Server error rejecting technician' });
+    console.error('Reject technician proof error:', err);
+    res.status(500).json({ message: 'Server error rejecting proof' });
   }
 };
 
 exports.getPendingTechnicians = async (req, res) => {
   try {
+    // A technician is pending if their overall status is 'pending' OR if they have any 'pending' proof status
     const result = await pool.query(
-      'SELECT id, name, email, phone, skills, experience, verification_status, id_proof_url FROM technicians WHERE verification_status = $1',
-      ['pending']
+      `SELECT id, name, email, phone, skills, experience, verification_status, 
+              aadhar_card_url, aadhar_verification_status, pan_card_url, pan_verification_status 
+       FROM technicians 
+       WHERE verification_status = 'pending' 
+          OR aadhar_verification_status = 'pending' 
+          OR pan_verification_status = 'pending'
+       ORDER BY created_at DESC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -183,5 +232,37 @@ exports.getDashboardOverview = async (req, res) => {
   } catch (err) {
     console.error('Dashboard overview error:', err);
     res.status(500).json({ message: 'Server error fetching dashboard overview' });
+  }
+};
+
+exports.updateResaleRequest = async (req, res) => {
+  try {
+    const resaleId = req.params.resaleId;
+    const { admin_notes, status } = req.body;
+
+    let query = 'UPDATE resale_requests SET updated_at = CURRENT_TIMESTAMP';
+    const params = [];
+    let paramIndex = 1;
+
+    if (admin_notes !== undefined) {
+      query += `, admin_notes = $${paramIndex}`;
+      params.push(admin_notes);
+      paramIndex++;
+    }
+
+    if (status !== undefined) {
+      query += `, status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ` WHERE id = $${paramIndex}`;
+    params.push(resaleId);
+
+    await pool.query(query, params);
+    res.json({ message: 'Resale request updated successfully' });
+  } catch (err) {
+    console.error('Update resale request error:', err);
+    res.status(500).json({ message: 'Server error updating resale request' });
   }
 };

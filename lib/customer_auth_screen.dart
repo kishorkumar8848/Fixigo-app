@@ -6,6 +6,7 @@ import 'role_selection.dart';
 import 'api.dart';
 import 'session.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'location_picker_screen.dart';
 
 class CustomerAuthScreen extends StatefulWidget {
   const CustomerAuthScreen({super.key});
@@ -32,10 +33,10 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   final _signupAddressController = TextEditingController();
   final _signupPasswordController = TextEditingController();
   bool _signupLoading = false;
+  double? _latitude;
+  double? _longitude;
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-  );
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   @override
   void initState() {
@@ -66,68 +67,23 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   }
 
   Future<void> _requestAndFetchLocation() async {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.location_on_rounded, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Location Permission'),
-          ],
-        ),
-        content: const Text(
-          'Allow "Fixigo" to access this device\'s location to find doorstep repairs and assignments nearby?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Deny'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showLocationFetchingProgress();
-            },
-            child: const Text('Allow'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLocationFetchingProgress() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Expanded(child: Text('Fetching current GPS coordinates...')),
-          ],
-        ),
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LocationPickerScreen(),
       ),
     );
 
-    Future.delayed(const Duration(seconds: 1), () {
-      Navigator.pop(context);
-      final neighborhoods = [
-        'Indiranagar, Bengaluru',
-        'Koramangala, Bengaluru',
-        'HSR Layout, Bengaluru',
-        'Jayanagar, Bengaluru',
-        'Whitefield, Bengaluru',
-      ];
-      final randomNeighborhood =
-          neighborhoods[DateTime.now().millisecond % neighborhoods.length];
-      _signupAddressController.text = randomNeighborhood;
+    if (result != null) {
+      setState(() {
+        _signupAddressController.text = result.address;
+        _latitude = result.latitude;
+        _longitude = result.longitude;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Auto-filled current location: $randomNeighborhood')),
+        SnackBar(content: Text('Auto-filled location: ${result.address}')),
       );
-    });
+    }
   }
 
   Future<bool> _loginWithCredentials(String email, String password) async {
@@ -150,6 +106,14 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
         Session.email = data['email'] ?? email;
         Session.phone = data['phone'] ?? '';
         Session.address = data['address'] ?? '';
+        if (_latitude != null) {
+          Session.latitude = _latitude;
+        }
+                if (_longitude != null) {
+          Session.longitude = _longitude;
+        }
+
+        await Session.saveToDisk();
 
         Navigator.pushReplacement(
           context,
@@ -224,7 +188,7 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
   Future<void> _handleGoogleSignIn() async {
     try {
       // Trigger the native Google Account chooser dialog
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate(scopeHint: ['email', 'profile']);
       if (googleUser != null) {
         final String email = googleUser.email;
         final String displayName = googleUser.displayName ?? googleUser.email.split('@')[0];
@@ -334,7 +298,9 @@ class _CustomerAuthScreenState extends State<CustomerAuthScreen>
         Session.name = data['name'] ?? '';
         Session.email = data['email'] ?? email;
         Session.phone = data['phone'] ?? '';
-        Session.address = data['address'] ?? '';
+                Session.address = data['address'] ?? '';
+
+        await Session.saveToDisk();
 
         Navigator.pushReplacement(
           context,

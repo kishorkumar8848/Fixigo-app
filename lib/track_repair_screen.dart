@@ -21,7 +21,11 @@ class _TrackRepairScreenState extends State<TrackRepairScreen> {
   @override
   void initState() {
     super.initState();
-    _booking = widget.booking;
+    if (widget.booking['status'] == null) {
+      _booking = null;
+    } else {
+      _booking = widget.booking;
+    }
     _fetchBookingDetails();
   }
 

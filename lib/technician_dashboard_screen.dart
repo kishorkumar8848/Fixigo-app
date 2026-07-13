@@ -3,6 +3,7 @@ import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'api.dart';
 import 'session.dart';
+import 'location_picker_screen.dart';
 
 class TechnicianDashboardScreen extends StatefulWidget {
   const TechnicianDashboardScreen({super.key});
@@ -19,7 +20,11 @@ class _TechnicianDashboardScreenState extends State<TechnicianDashboardScreen> {
   int _todayJobsCount = 0;
   double _todayEarnings = 0.0;
   int _pendingJobsCount = 0;
+  int _completionRate = 100;
   List<dynamic> _todayJobs = [];
+  String _verificationStatus = 'pending';
+  String _aadharVerificationStatus = 'unuploaded';
+  String _panVerificationStatus = 'unuploaded';
 
   @override
   void initState() {
@@ -41,6 +46,11 @@ class _TechnicianDashboardScreenState extends State<TechnicianDashboardScreen> {
           _todayJobsCount = int.tryParse(stats['todayJobsCount']?.toString() ?? '0') ?? 0;
           _todayEarnings = double.tryParse(stats['todayEarnings']?.toString() ?? '0') ?? 0.0;
           _pendingJobsCount = int.tryParse(stats['pendingJobsCount']?.toString() ?? '0') ?? 0;
+          _completionRate = int.tryParse(stats['completionRate']?.toString() ?? '100') ?? 100;
+          
+          _verificationStatus = data['verificationStatus'] ?? 'pending';
+          _aadharVerificationStatus = data['aadharVerificationStatus'] ?? 'unuploaded';
+          _panVerificationStatus = data['panVerificationStatus'] ?? 'unuploaded';
           
           _todayJobs = data['todayJobs'] ?? [];
           _isLoading = false;
@@ -50,6 +60,35 @@ class _TechnicianDashboardScreenState extends State<TechnicianDashboardScreen> {
       }
     } catch (e) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _changeLocation() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: Session.latitude,
+          initialLongitude: Session.longitude,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        Session.address = result.address;
+        Session.latitude = result.latitude;
+        Session.longitude = result.longitude;
+      });
+
+      try {
+        await Api.put('/auth/technician/profile/${Session.userId}', {
+          'name': _techName,
+          'email': Session.email ?? '',
+          'phone': Session.phone ?? '',
+          'address': result.address,
+        });
+      } catch (_) {}
     }
   }
 
@@ -76,8 +115,37 @@ class _TechnicianDashboardScreenState extends State<TechnicianDashboardScreen> {
                 name: _techName,
                 rating: _rating,
                 skills: _skills,
+                onChangeLocation: _changeLocation,
               ),
             ),
+            if (_verificationStatus != 'verified')
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _aadharVerificationStatus != 'verified' || _panVerificationStatus != 'verified'
+                                ? 'Action required: Please upload and complete verification for both Aadhaar Card and PAN Card in your Profile section to accept jobs.'
+                                : 'Awaiting verification: Admin is verifying your uploaded ID proofs. You can accept jobs once approved.',
+                            style: TextStyle(color: Colors.red.shade900, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             // Stats grid
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -145,7 +213,12 @@ class _TechnicianDashboardScreenState extends State<TechnicianDashboardScreen> {
             // Performance
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              sliver: SliverToBoxAdapter(child: _PerformanceCard()),
+              sliver: SliverToBoxAdapter(
+                child: _PerformanceCard(
+                  rating: _rating,
+                  completionRate: _completionRate,
+                ),
+              ),
             ),
             const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
           ],
@@ -159,11 +232,13 @@ class _TechHeader extends StatelessWidget {
   final String name;
   final double rating;
   final String skills;
+  final VoidCallback onChangeLocation;
 
   const _TechHeader({
     required this.name,
     required this.rating,
     required this.skills,
+    required this.onChangeLocation,
   });
 
   @override
@@ -215,8 +290,31 @@ class _TechHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Good Morning! 🔧',
-                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+                InkWell(
+                  onTap: onChangeLocation,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on_rounded,
+                          color: Colors.white70, size: 14),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          (Session.address != null && Session.address!.isNotEmpty)
+                              ? (Session.address!.length > 25 ? '${Session.address!.substring(0, 22)}...' : Session.address!)
+                              : 'Select Location KA',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 12),
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white70, size: 18),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Text(
                   name,
                   style: const TextStyle(
@@ -458,8 +556,19 @@ class _TodayJobCard extends StatelessWidget {
 }
 
 class _PerformanceCard extends StatelessWidget {
+  final double rating;
+  final int completionRate;
+
+  const _PerformanceCard({
+    required this.rating,
+    required this.completionRate,
+  });
+
   @override
   Widget build(BuildContext context) {
+    final double completionVal = completionRate / 100.0;
+    final double ratingVal = (rating > 0 && rating <= 5) ? rating / 5.0 : 1.0;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -473,11 +582,11 @@ class _PerformanceCard extends StatelessWidget {
           const Text("This Week's Performance",
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           const SizedBox(height: 16),
-          _PerfBar('Jobs Completed', 1.0, '100%', AppColors.primary),
+          _PerfBar('Jobs Completed', completionVal, '$completionRate%', AppColors.primary),
           const SizedBox(height: 12),
-          _PerfBar('Customer Rating', 0.96, '4.8/5.0', AppColors.success),
+          _PerfBar('Customer Rating', ratingVal, '${rating.toStringAsFixed(1)}/5.0', AppColors.success),
           const SizedBox(height: 12),
-          _PerfBar('On-time Arrival', 0.90, '90%', AppColors.warning),
+          _PerfBar('On-time Arrival', 0.98, '98%', AppColors.warning),
         ],
       ),
     );

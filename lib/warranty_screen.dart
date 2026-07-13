@@ -5,7 +5,8 @@ import 'session.dart';
 import 'api.dart';
 
 class WarrantyScreen extends StatefulWidget {
-  const WarrantyScreen({super.key});
+  final int initialIndex;
+  const WarrantyScreen({super.key, this.initialIndex = 0});
 
   @override
   State<WarrantyScreen> createState() => _WarrantyScreenState();
@@ -21,7 +22,7 @@ class _WarrantyScreenState extends State<WarrantyScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 2, vsync: this, initialIndex: widget.initialIndex);
     _fetchWarrantyAndHistory();
   }
 
@@ -73,6 +74,105 @@ class _WarrantyScreenState extends State<WarrantyScreen>
     }
   }
 
+  void _showRatingDialog(Map<String, dynamic> booking) {
+    int rating = 5;
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Rate Your Repair', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'How was your repair service for ${booking['appliance_type']}?',
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  5,
+                  (i) => GestureDetector(
+                    onTap: () => setStateDialog(() => rating = i + 1),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                        size: 36,
+                        color: Colors.amber[600],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: commentController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Share your feedback...',
+                  hintStyle: const TextStyle(fontSize: 13, color: AppColors.textTertiary),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final comment = commentController.text.trim();
+                final scaffoldMessenger = ScaffoldMessenger.of(context);
+                Navigator.pop(ctx);
+                
+                setState(() => _isLoading = true);
+                try {
+                  final resp = await Api.post('/bookings/${booking['id']}/review', {
+                    'rating': rating,
+                    'comment': comment,
+                  });
+                  
+                  if (resp['status'] == 200) {
+                    scaffoldMessenger.showSnackBar(
+                      const SnackBar(content: Text('Thank you for your feedback!')),
+                    );
+                    _fetchWarrantyAndHistory();
+                  } else {
+                    final msg = resp['data']['message'] ?? 'Failed to submit review';
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(content: Text(msg)),
+                    );
+                    if (mounted) setState(() => _isLoading = false);
+                  }
+                } catch (e) {
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                  if (mounted) setState(() => _isLoading = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -120,9 +220,10 @@ class _WarrantyScreenState extends State<WarrantyScreen>
                         warranties: _warranties,
                         onRefresh: _fetchWarrantyAndHistory,
                       ),
-                      _HistoryTab(
+                       _HistoryTab(
                         history: _history,
                         onRefresh: _fetchWarrantyAndHistory,
+                        onRate: (booking) => _showRatingDialog(booking),
                       ),
                     ],
                   ),
@@ -362,10 +463,12 @@ class _WarrantyCard extends StatelessWidget {
 class _HistoryTab extends StatelessWidget {
   final List<dynamic> history;
   final VoidCallback onRefresh;
+  final Function(Map<String, dynamic>) onRate;
 
   const _HistoryTab({
     required this.history,
     required this.onRefresh,
+    required this.onRate,
   });
 
   String _getMonthName(int month) {
@@ -421,12 +524,16 @@ class _HistoryTab extends StatelessWidget {
             final priceStr = rawPrice != null ? "₹$rawPrice" : "₹399";
 
             return _HistoryCard(
+              booking: h,
               service: h['appliance_type'] ?? 'General Repair',
               date: dateStr,
               amount: priceStr,
               status: h['status'] ?? 'completed',
-              rating: h['technician_rating'] != null
-                  ? double.tryParse(h['technician_rating'].toString())
+              rating: h['booking_review_rating'] != null
+                  ? double.tryParse(h['booking_review_rating'].toString())
+                  : null,
+              onRateTap: h['booking_review_rating'] == null && h['technician_id'] != null
+                  ? () => onRate(h)
                   : null,
             );
           }),
@@ -437,15 +544,19 @@ class _HistoryTab extends StatelessWidget {
 }
 
 class _HistoryCard extends StatelessWidget {
+  final Map<String, dynamic> booking;
   final String service, date, amount, status;
   final double? rating;
+  final VoidCallback? onRateTap;
 
   const _HistoryCard({
+    required this.booking,
     required this.service,
     required this.date,
     required this.amount,
     required this.status,
     this.rating,
+    this.onRateTap,
   });
 
   @override
@@ -504,6 +615,27 @@ class _HistoryCard extends StatelessWidget {
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.textSecondary)),
                     ],
+                  ),
+                ] else if (status == 'completed' && onRateTap != null) ...[
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: onRateTap,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_outline_rounded,
+                            size: 14, color: AppColors.primary),
+                        SizedBox(width: 4),
+                        Text(
+                          'Rate Repair',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ],

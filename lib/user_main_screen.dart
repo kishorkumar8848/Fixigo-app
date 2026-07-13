@@ -43,9 +43,7 @@ class _UserMainScreenState extends State<UserMainScreen> {
         ),
         const ResellScreen(),
         const WarrantyScreen(),
-        ProfileScreen(
-          onTabChanged: (index) => _switchTab(index),
-        ),
+        const ProfileScreen(),
       ];
 
   @override

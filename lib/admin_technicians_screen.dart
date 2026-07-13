@@ -60,17 +60,17 @@ class _AdminTechniciansScreenState extends State<AdminTechniciansScreen> with Si
     }
   }
 
-  Future<void> _updateStatus(int technicianId, String newStatus) async {
+  Future<void> _updateProofStatus(int technicianId, String type, String action) async {
     try {
-      final endpoint = newStatus == 'verified' 
-          ? '/admin/technicians/$technicianId/verify'
-          : '/admin/technicians/$technicianId/reject';
+      final endpoint = action == 'verify' 
+          ? '/admin/technicians/$technicianId/verify/$type'
+          : '/admin/technicians/$technicianId/reject/$type';
           
       final response = await Api.patch(endpoint, {});
       
       if (response['status'] == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Technician $newStatus successfully')),
+          SnackBar(content: Text('${type == 'aadhar' ? 'Aadhaar' : 'PAN'} $action successfully')),
         );
         _fetchTechnicians(); // refresh list
       } else {
@@ -90,6 +90,98 @@ class _AdminTechniciansScreenState extends State<AdminTechniciansScreen> with Si
     String n = name.toString().trim();
     if (n.isEmpty) return 'U';
     return n.substring(0, 1).toUpperCase();
+  }
+
+  Widget _buildDocVerificationRow(dynamic t, String type, String title) {
+    final String docUrl = t['${type}_card_url'] ?? '';
+    final String docStatus = t['${type}_verification_status'] ?? 'unuploaded';
+
+    Color statusColor = Colors.grey;
+    if (docStatus == 'verified') statusColor = Colors.green;
+    else if (docStatus == 'pending') statusColor = Colors.orange;
+    else if (docStatus == 'rejected') statusColor = Colors.red;
+
+    final baseUrl = Api.baseUrl;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  docStatus.toUpperCase(),
+                  style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (docUrl.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                docUrl.startsWith('http') ? docUrl : '$baseUrl$docUrl',
+                height: 120,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  color: Colors.grey.shade200,
+                  child: const Center(
+                    child: Icon(Icons.broken_image, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+            if (docStatus == 'pending') ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Reject', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _updateProofStatus(t['id'], type, 'reject'),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: Size.zero,
+                    ),
+                    icon: const Icon(Icons.check, size: 16, color: Colors.white),
+                    label: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12)),
+                    onPressed: () => _updateProofStatus(t['id'], type, 'verify'),
+                  ),
+                ],
+              ),
+            ],
+          ] else
+            const Text(
+              'No document uploaded yet.',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12, color: Colors.grey),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTechnicianList(List<dynamic> techs, bool actable) {
@@ -150,36 +242,15 @@ class _AdminTechniciansScreenState extends State<AdminTechniciansScreen> with Si
                     _infoRow(Icons.build_circle_outlined, 'Skills: ${t['skills'] ?? 'N/A'}'),
                     const SizedBox(height: 8),
                     _infoRow(Icons.work_history_outlined, 'Experience: ${t['experience'] ?? 0} years'),
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 12),
+                    const Text('Verification Proofs:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    _buildDocVerificationRow(t, 'aadhar', 'Aadhaar Card'),
+                    _buildDocVerificationRow(t, 'pan', 'PAN Card'),
                   ],
                 ),
-                if (status == 'pending') ...[
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                            icon: const Icon(Icons.close),
-                            label: const Text('Reject'),
-                            onPressed: () => _updateStatus(t['id'], 'rejected'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                            icon: const Icon(Icons.check, color: Colors.white),
-                            label: const Text('Approve', style: TextStyle(color: Colors.white)),
-                            onPressed: () => _updateStatus(t['id'], 'verified'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ]
               ],
             ),
           );

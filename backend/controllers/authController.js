@@ -109,6 +109,7 @@ exports.customerLogin = async (req, res) => {
 exports.technicianSignup = async (req, res) => {
   try {
     const { name, phone, email, password, skills, experience, address } = req.body;
+    const idProofType = req.body.id_proof_type; // 'aadhar' or 'pan'
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -121,9 +122,20 @@ exports.technicianSignup = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let id_proof_url = null;
+    let aadhar_card_url = null;
+    let aadhar_verification_status = 'unuploaded';
+    let pan_card_url = null;
+    let pan_verification_status = 'unuploaded';
+
     if (req.file) {
-      id_proof_url = '/uploads/' + req.file.filename;
+      const fileUrl = '/uploads/' + req.file.filename;
+      if (idProofType === 'aadhar') {
+        aadhar_card_url = fileUrl;
+        aadhar_verification_status = 'pending';
+      } else if (idProofType === 'pan') {
+        pan_card_url = fileUrl;
+        pan_verification_status = 'pending';
+      }
     }
 
     const coords = geocodeAddress(address);
@@ -131,14 +143,22 @@ exports.technicianSignup = async (req, res) => {
     const longitude = req.body.longitude || coords.longitude;
 
     const result = await pool.query(
-      'INSERT INTO technicians (name, phone, email, password, skills, experience, verification_status, id_proof_url, latitude, longitude, address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
-      [name, phone, email, hashedPassword, skills || '', experience || 0, 'pending', id_proof_url, latitude, longitude, address || '']
+      `INSERT INTO technicians (
+        name, phone, email, password, skills, experience, verification_status, 
+        aadhar_card_url, aadhar_verification_status, pan_card_url, pan_verification_status, 
+        latitude, longitude, address
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+      [
+        name, phone, email, hashedPassword, skills || '', experience || 0, 'pending',
+        aadhar_card_url, aadhar_verification_status, pan_card_url, pan_verification_status,
+        latitude, longitude, address || ''
+      ]
     );
 
     const technicianId = result.rows[0].id;
 
     res.status(201).json({
-      message: 'Technician registered successfully. Awaiting verification.',
+      message: 'Technician registered successfully. Please log in and verify your proofs.',
       technicianId,
       status: 'pending',
       name,
@@ -191,10 +211,6 @@ exports.technicianLogin = async (req, res) => {
 
     if (technician.verification_status === 'rejected') {
       return res.status(403).json({ message: 'Your account has been rejected' });
-    }
-
-    if (technician.verification_status === 'pending') {
-      return res.status(403).json({ message: 'Your account is pending verification by admin' });
     }
 
     const validPassword = await bcrypt.compare(password, technician.password);
@@ -387,7 +403,9 @@ exports.getTechnicianProfile = async (req, res) => {
     const technicianId = req.params.technicianId;
 
     const result = await pool.query(
-      'SELECT id, name, email, phone, skills, experience, rating, verification_status, total_jobs, address, latitude, longitude FROM technicians WHERE id = $1',
+      `SELECT id, name, email, phone, skills, experience, rating, verification_status, total_jobs, address, latitude, longitude,
+              aadhar_card_url, aadhar_verification_status, pan_card_url, pan_verification_status, work_schedule
+       FROM technicians WHERE id = $1`,
       [technicianId]
     );
 
@@ -404,6 +422,16 @@ exports.getTechnicianProfile = async (req, res) => {
     );
     const totalEarnings = parseFloat(earningsRes.rows[0].total || 0);
 
+    // Fetch reviews from database
+    const reviewsRes = await pool.query(
+      `SELECT r.id, r.rating, r.comment, r.created_at, c.name as customer_name
+       FROM reviews r
+       JOIN customers c ON r.customer_id = c.id
+       WHERE r.technician_id = $1
+       ORDER BY r.created_at DESC`,
+      [technicianId]
+    );
+
     res.json({
       id: tech.id,
       name: tech.name,
@@ -413,11 +441,17 @@ exports.getTechnicianProfile = async (req, res) => {
       experience: tech.experience || 0,
       rating: parseFloat(tech.rating || 0),
       verificationStatus: tech.verification_status,
+      aadharCardUrl: tech.aadhar_card_url || '',
+      aadharVerificationStatus: tech.aadhar_verification_status || 'unuploaded',
+      panCardUrl: tech.pan_card_url || '',
+      panVerificationStatus: tech.pan_verification_status || 'unuploaded',
+      workSchedule: tech.work_schedule || '',
       totalJobs: tech.total_jobs || 0,
       totalEarnings,
       address: tech.address || '',
       latitude: parseFloat(tech.latitude || 12.971598),
       longitude: parseFloat(tech.longitude || 77.594562),
+      reviews: reviewsRes.rows,
     });
   } catch (err) {
     console.error('Get tech profile error:', err);
@@ -431,13 +465,13 @@ exports.getTechnicianDashboard = async (req, res) => {
 
     // 1. Today's Jobs count
     const todayJobsRes = await pool.query(
-      "SELECT COUNT(*) FROM jobs WHERE technician_id = $1 AND status IN ('accepted', 'in_progress', 'completed') AND created_at::date = CURRENT_DATE",
+      "SELECT COUNT(*) FROM jobs WHERE technician_id = $1 AND status IN ('accepted', 'in_progress', 'completed') AND date(created_at) = CURRENT_DATE",
       [technicianId]
     );
 
     // 2. Today's Earnings
     const todayEarningsRes = await pool.query(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM earnings WHERE technician_id = $1 AND created_at::date = CURRENT_DATE",
+      "SELECT COALESCE(SUM(amount), 0) as total FROM earnings WHERE technician_id = $1 AND date(created_at) = CURRENT_DATE",
       [technicianId]
     );
 
@@ -449,7 +483,9 @@ exports.getTechnicianDashboard = async (req, res) => {
 
     // 4. Rating and general details
     const techRes = await pool.query(
-      "SELECT rating, name, skills FROM technicians WHERE id = $1",
+      `SELECT rating, name, skills, verification_status, 
+              aadhar_verification_status, pan_verification_status 
+       FROM technicians WHERE id = $1`,
       [technicianId]
     );
     if (techRes.rows.length === 0) {
@@ -457,7 +493,20 @@ exports.getTechnicianDashboard = async (req, res) => {
     }
     const tech = techRes.rows[0];
 
-    // 5. Today's Jobs list
+    // 5. Total and completed jobs for performance card
+    const totalJobsRes = await pool.query(
+      "SELECT COUNT(*) FROM jobs WHERE technician_id = $1 AND status != 'cancelled'",
+      [technicianId]
+    );
+    const completedJobsRes = await pool.query(
+      "SELECT COUNT(*) FROM jobs WHERE technician_id = $1 AND status = 'completed'",
+      [technicianId]
+    );
+    const totalJobs = parseInt(totalJobsRes.rows[0].count, 10);
+    const completedJobs = parseInt(completedJobsRes.rows[0].count, 10);
+    const completionRate = totalJobs > 0 ? Math.round((completedJobs / totalJobs) * 100) : 100;
+
+    // 6. Today's Jobs list
     const jobsListRes = await pool.query(
       `SELECT j.*, b.appliance_type, b.issue_description, b.location, b.preferred_date, c.name as customer_name, c.phone as customer_phone
        FROM jobs j
@@ -472,11 +521,15 @@ exports.getTechnicianDashboard = async (req, res) => {
       name: tech.name,
       rating: parseFloat(tech.rating || 0),
       skills: tech.skills || '',
+      verificationStatus: tech.verification_status,
+      aadharVerificationStatus: tech.aadhar_verification_status || 'unuploaded',
+      panVerificationStatus: tech.pan_verification_status || 'unuploaded',
       stats: {
         todayJobsCount: parseInt(todayJobsRes.rows[0].count, 10),
         todayEarnings: parseFloat(todayEarningsRes.rows[0].total || 0),
         pendingJobsCount: parseInt(pendingJobsRes.rows[0].count, 10),
         rating: parseFloat(tech.rating || 0),
+        completionRate: completionRate
       },
       todayJobs: jobsListRes.rows
     });
@@ -489,18 +542,28 @@ exports.getTechnicianDashboard = async (req, res) => {
 exports.updateTechnicianProfile = async (req, res) => {
   try {
     const technicianId = req.params.technicianId;
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, skills, experience, workSchedule } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ message: 'Name and email are required' });
     }
 
-    let query = 'UPDATE technicians SET name = $1, email = $2, phone = $3, address = $4';
-    const params = [name, email, phone || '', address || ''];
+    let query = `UPDATE technicians 
+                 SET name = $1, email = $2, phone = $3, address = $4, 
+                     skills = $5, experience = $6, work_schedule = $7`;
+    const params = [
+      name,
+      email,
+      phone || '',
+      address || '',
+      skills || '',
+      parseInt(experience || 0, 10),
+      workSchedule || ''
+    ];
 
     if (address) {
       const coords = geocodeAddress(address);
-      query += ', latitude = $5, longitude = $6';
+      query += ', latitude = $8, longitude = $9';
       params.push(coords.latitude, coords.longitude);
     }
 
@@ -513,5 +576,49 @@ exports.updateTechnicianProfile = async (req, res) => {
   } catch (err) {
     console.error('Update tech profile error:', err);
     res.status(500).json({ message: 'Server error updating profile' });
+  }
+};
+
+exports.uploadTechnicianProof = async (req, res) => {
+  try {
+    const technicianId = req.user.id;
+    const { type } = req.body; // 'aadhar' or 'pan'
+
+    if (!type || (type !== 'aadhar' && type !== 'pan')) {
+      return res.status(400).json({ message: 'Valid type is required (aadhar or pan)' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'File is required' });
+    }
+
+    const fileUrl = '/uploads/' + req.file.filename;
+
+    if (type === 'aadhar') {
+      await pool.query(
+        `UPDATE technicians 
+         SET aadhar_card_url = $1, aadhar_verification_status = 'pending', 
+             verification_status = CASE WHEN verification_status = 'rejected' THEN 'pending' ELSE verification_status END 
+         WHERE id = $2`,
+        [fileUrl, technicianId]
+      );
+    } else if (type === 'pan') {
+      await pool.query(
+        `UPDATE technicians 
+         SET pan_card_url = $1, pan_verification_status = 'pending',
+             verification_status = CASE WHEN verification_status = 'rejected' THEN 'pending' ELSE verification_status END 
+         WHERE id = $2`,
+        [fileUrl, technicianId]
+      );
+    }
+
+    res.json({ 
+      message: 'Proof uploaded successfully. Awaiting verification.',
+      fileUrl,
+      type
+    });
+  } catch (err) {
+    console.error('Upload proof error:', err);
+    res.status(500).json({ message: 'Server error uploading proof' });
   }
 };

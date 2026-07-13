@@ -14,5 +14,6 @@ router.get('/user/:customerId', authenticate, bookingController.getCustomerBooki
 router.get('/history/:customerId', authenticate, bookingController.getBookingHistory);
 router.get('/details/:bookingId', authenticate, bookingController.getBookingDetails);
 router.put('/:bookingId/cancel', authenticate, bookingController.cancelBooking);
+router.post('/:bookingId/review', authenticate, bookingController.createBookingReview);
 
 module.exports = router;

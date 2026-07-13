@@ -201,10 +201,12 @@ exports.getBookingHistory = async (req, res) => {
     const customerId = req.params.customerId;
 
     const result = await pool.query(
-      `SELECT b.*, t.name as technician_name, t.rating as technician_rating, j.price as job_price
+      `SELECT b.*, t.name as technician_name, t.rating as technician_rating, j.price as job_price,
+              r.rating as booking_review_rating, r.comment as booking_review_comment
        FROM bookings b
        LEFT JOIN technicians t ON b.technician_id = t.id
        LEFT JOIN jobs j ON j.booking_id = b.id
+       LEFT JOIN reviews r ON r.booking_id = b.id
        WHERE b.customer_id = $1 AND b.status = 'completed'
        ORDER BY b.updated_at DESC`,
       [customerId]
@@ -222,7 +224,7 @@ exports.getBookingDetails = async (req, res) => {
     const bookingId = req.params.bookingId;
 
     const result = await pool.query(
-      `SELECT b.*, t.name as technician_name, t.phone as technician_phone, t.rating, t.latitude as technician_latitude, t.longitude as technician_longitude
+      `SELECT b.*, t.name as technician_name, t.phone as technician_phone, t.rating
        FROM bookings b
        LEFT JOIN technicians t ON b.technician_id = t.id
        WHERE b.id = $1`,
@@ -252,7 +254,7 @@ exports.cancelBooking = async (req, res) => {
     // Update booking status to cancelled and write cancellation reason
     const bookingRes = await pool.query(
       `UPDATE bookings 
-       SET status = 'cancelled', cancellation_reason = $1, updated_at = CURRENT_TIMESTAMP 
+       SET status = 'cancelled', cancellation_reason = $1, updated_at = datetime('now') 
        WHERE id = $2 RETURNING *`,
       [reason, bookingId]
     );
@@ -264,7 +266,7 @@ exports.cancelBooking = async (req, res) => {
     // Also update associated jobs status to cancelled
     await pool.query(
       `UPDATE jobs 
-       SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
+       SET status = 'cancelled', updated_at = datetime('now') 
        WHERE booking_id = $1`,
       [bookingId]
     );
@@ -401,10 +403,8 @@ exports.initiateBooking = async (req, res) => {
     let paymentUrl = '';
     let razorpayOrderId = '';
 
-    const protocol = (req.headers.host && (req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1'))) ? 'http' : 'https';
-
     if (isMock) {
-      paymentUrl = `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
+      paymentUrl = `http://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
       razorpayOrderId = `order_mock_${bookingId}_${Date.now().toString().slice(-4)}`;
     } else {
       const razorpay = require('../config/razorpay');
@@ -424,14 +424,14 @@ exports.initiateBooking = async (req, res) => {
             sms: false,
             email: false
           },
-          callback_url: `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/payment-callback?booking_id=${bookingId}`,
+          callback_url: `http://${req.headers.host || 'localhost:3000'}/bookings/payment-callback?booking_id=${bookingId}`,
           callback_method: "get"
         });
         paymentUrl = paymentLink.short_url;
         razorpayOrderId = paymentLink.order_id || `order_${paymentLink.id}`;
       } catch (err) {
         console.error('Razorpay API error, falling back to mock:', err.message);
-        paymentUrl = `${protocol}://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
+        paymentUrl = `http://${req.headers.host || 'localhost:3000'}/bookings/mock-payment?booking_id=${bookingId}&amount=50`;
         razorpayOrderId = `order_mock_${bookingId}_${Date.now().toString().slice(-4)}`;
       }
     }
@@ -479,7 +479,7 @@ exports.handlePaymentCallback = async (req, res) => {
         // 2. Update payment status and booking status
         await pool.query(
           `UPDATE bookings 
-           SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, updated_at = CURRENT_TIMESTAMP 
+           SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, updated_at = datetime('now') 
            WHERE id = $2`,
           [razorpay_payment_id || `pay_${Date.now()}`, booking_id]
         );
@@ -605,7 +605,7 @@ exports.verifyPaymentSignature = async (req, res) => {
     if (razorpay_payment_id.startsWith('pay_mock_')) {
       await pool.query(
         `UPDATE bookings 
-         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = CURRENT_TIMESTAMP 
+         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = datetime('now') 
          WHERE id = $3`,
         [razorpay_payment_id, razorpay_order_id, bookingId]
       );
@@ -620,7 +620,7 @@ exports.verifyPaymentSignature = async (req, res) => {
     if (generated_signature === razorpay_signature) {
       await pool.query(
         `UPDATE bookings 
-         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = CURRENT_TIMESTAMP 
+         SET payment_status = 'paid', status = 'pending', razorpay_payment_id = $1, razorpay_order_id = $2, updated_at = datetime('now') 
          WHERE id = $3`,
         [razorpay_payment_id, razorpay_order_id, bookingId]
       );
@@ -631,5 +631,72 @@ exports.verifyPaymentSignature = async (req, res) => {
   } catch (err) {
     console.error('Signature verification error:', err);
     res.status(500).json({ message: 'Server error verifying signature' });
+  }
+};
+
+exports.createBookingReview = async (req, res) => {
+  try {
+    const bookingId = req.params.bookingId;
+    const { rating, comment } = req.body;
+    const customerId = req.user.id;
+
+    if (!rating) {
+      return res.status(400).json({ message: 'Rating is required' });
+    }
+
+    const bookingRes = await pool.query(
+      'SELECT * FROM bookings WHERE id = $1',
+      [bookingId]
+    );
+
+    if (bookingRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    const booking = bookingRes.rows[0];
+
+    if (booking.customer_id !== customerId) {
+      return res.status(403).json({ message: 'You are not authorized to review this booking' });
+    }
+
+    if (booking.status !== 'completed') {
+      return res.status(400).json({ message: 'You can only review completed repairs' });
+    }
+
+    if (!booking.technician_id) {
+      return res.status(400).json({ message: 'No technician assigned to this booking' });
+    }
+
+    const technicianId = booking.technician_id;
+
+    const existingReview = await pool.query(
+      'SELECT id FROM reviews WHERE booking_id = $1',
+      [bookingId]
+    );
+
+    if (existingReview.rows.length > 0) {
+      return res.status(400).json({ message: 'You have already reviewed this booking' });
+    }
+
+    await pool.query(
+      'INSERT INTO reviews (booking_id, customer_id, technician_id, rating, comment) VALUES ($1, $2, $3, $4, $5)',
+      [bookingId, customerId, technicianId, parseInt(rating, 10), comment || '']
+    );
+
+    const avgRes = await pool.query(
+      'SELECT AVG(rating) as avg_rating FROM reviews WHERE technician_id = $1',
+      [technicianId]
+    );
+    const avgRating = parseFloat(avgRes.rows[0].avg_rating || 0);
+
+    await pool.query(
+      'UPDATE technicians SET rating = $1 WHERE id = $2',
+      [avgRating, technicianId]
+    );
+
+    res.json({ message: 'Review submitted successfully', rating: avgRating });
+  } catch (err) {
+    console.error('Create review error:', err);
+    res.status(500).json({ message: 'Server error during review submission' });
   }
 };

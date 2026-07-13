@@ -8,6 +8,7 @@ import 'api.dart';
 import 'session.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'location_picker_screen.dart';
+import 'track_repair_screen.dart';
 
 
 class BookServiceScreen extends StatefulWidget {
@@ -724,7 +725,17 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _BookingSuccessSheet(bookingId: bookingId),
-    );
+    ).then((result) {
+      if (!mounted) return;
+      if (result != 'home') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TrackRepairScreen(booking: {'id': bookingId}),
+          ),
+        );
+      }
+    });
   }
 }
 
@@ -1696,13 +1707,13 @@ class _BookingSuccessSheet extends StatelessWidget {
           const SizedBox(height: 24),
           GradientButton(
             text: 'Track Your Technician',
-            onTap: () => Navigator.pop(context),
+            onTap: () => Navigator.pop(context, 'track'),
             icon: const Icon(Icons.location_on_rounded,
                 color: Colors.white, size: 18),
           ),
           const SizedBox(height: 12),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, 'home'),
             child: const Text('Back to Home'),
           ),
         ],

@@ -17,8 +17,8 @@ router.get('/customers/:customerId', adminController.getCustomerDetails);
 // ======== TECHNICIANS MANAGEMENT ========
 router.get('/technicians', adminController.getAllTechnicians);
 router.get('/technicians/pending', adminController.getPendingTechnicians);
-router.patch('/technicians/:technicianId/verify', adminController.verifyTechnician);
-router.patch('/technicians/:technicianId/reject', adminController.rejectTechnician);
+router.patch('/technicians/:technicianId/verify/:proofType', adminController.verifyTechnicianProof);
+router.patch('/technicians/:technicianId/reject/:proofType', adminController.rejectTechnicianProof);
 
 // ======== BOOKINGS MANAGEMENT ========
 router.get('/bookings', adminController.getAllBookings);
@@ -28,5 +28,6 @@ router.get('/bookings/stats', adminController.getBookingStats);
 router.get('/resale-requests', adminController.getAllResaleRequests);
 router.patch('/resale-requests/:resaleId/approve', adminController.approveResaleRequest);
 router.patch('/resale-requests/:resaleId/reject', adminController.rejectResaleRequest);
+router.patch('/resale-requests/:resaleId', adminController.updateResaleRequest);
 
 module.exports = router;
