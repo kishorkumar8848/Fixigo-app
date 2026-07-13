@@ -196,12 +196,16 @@ class _ResellScreenState extends State<ResellScreen> {
         'address': _locationController.text.trim(),
       };
 
+      print('Submitting resale request with fields: $fields');
+
       Map<String, dynamic> resp;
       if (_selectedImage != null) {
         resp = await Api.multipartPost('/resale', fields, 'image', _selectedImage!.path);
       } else {
         resp = await Api.post('/resale', fields);
       }
+
+      print('Resale response: $resp');
 
       if (mounted) {
         Navigator.pop(context); // Pop loading
@@ -234,13 +238,25 @@ class _ResellScreenState extends State<ResellScreen> {
       } else {
         final msg = resp['data']?['message'] ?? 'Failed to submit request';
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $msg')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $msg'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('Submission error: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         Navigator.pop(context); // Pop loading
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Submission error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to schedule pickup. Please check your internet connection and try again. Error: $e'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
       }
     }
   }

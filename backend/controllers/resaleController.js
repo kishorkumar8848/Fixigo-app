@@ -21,13 +21,17 @@ exports.submitResaleRequest = async (req, res) => {
       address
     } = req.body;
 
+    console.log('Resale request received:', { customerId, appliance_type, expected_price, address });
+
     if (!customerId || !appliance_type || !expected_price) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      console.error('Missing required fields:', { customerId, appliance_type, expected_price });
+      return res.status(400).json({ message: 'Missing required fields: customerId, appliance_type, and expected_price are required' });
     }
 
     let imageUrl = '';
     if (req.file) {
       imageUrl = '/uploads/' + req.file.filename;
+      console.log('Image uploaded:', imageUrl);
     }
 
     const queryText = `
@@ -58,8 +62,12 @@ exports.submitResaleRequest = async (req, res) => {
       address || ''
     ];
 
+    console.log('Inserting resale request with params:', params);
+
     const result = await pool.query(queryText, params);
     const resaleRequestId = result.rows[0].id;
+
+    console.log('Resale request created successfully with ID:', resaleRequestId);
 
     res.status(201).json({ 
       message: 'Resale request submitted successfully',
@@ -67,7 +75,9 @@ exports.submitResaleRequest = async (req, res) => {
     });
   } catch (err) {
     console.error('Submit resale request error:', err);
-    res.status(500).json({ message: 'Server error submitting resale request' });
+    console.error('Error details:', err.message);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ message: `Server error submitting resale request: ${err.message}` });
   }
 };
 

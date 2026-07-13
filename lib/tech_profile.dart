@@ -148,6 +148,8 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
 
     setState(() => _isLoading = true);
     try {
+      print('Uploading $type proof from: ${pickedFile.path}');
+      
       final resp = await Api.multipartPost(
         '/auth/technician/upload-proof',
         {'type': type},
@@ -155,21 +157,31 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
         pickedFile.path,
       );
 
+      print('Upload response: $resp');
+
       if (resp['status'] == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${type == 'aadhar' ? 'Aadhaar' : 'PAN'} Card uploaded successfully!')),
         );
         await _fetchProfile();
       } else {
-        final message = resp['data']['message'] ?? 'Failed to upload proof';
+        final message = resp['data']?['message'] ?? 'Failed to upload proof';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 5),
+          ),
         );
         setState(() => _isLoading = false);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('Upload error: $e');
+      print('Stack trace: $stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(
+          content: Text('Server error uploading proof. Please check your connection and try again. Error: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
       setState(() => _isLoading = false);
     }
@@ -470,13 +482,36 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    await Session.clear();
-                    if (context.mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const RoleSelectionScreen()),
-                      );
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Logout'),
+                        content: const Text('Are you sure you want to logout?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.error,
+                            ),
+                            child: const Text('Logout'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true) {
+                      await Session.clear();
+                      if (context.mounted) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const RoleSelectionScreen()),
+                        );
+                      }
                     }
                   },
                   style: OutlinedButton.styleFrom(

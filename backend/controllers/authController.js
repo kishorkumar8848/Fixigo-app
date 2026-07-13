@@ -584,15 +584,20 @@ exports.uploadTechnicianProof = async (req, res) => {
     const technicianId = req.user.id;
     const { type } = req.body; // 'aadhar' or 'pan'
 
+    console.log('Upload proof request:', { technicianId, type, hasFile: !!req.file });
+
     if (!type || (type !== 'aadhar' && type !== 'pan')) {
+      console.error('Invalid type:', type);
       return res.status(400).json({ message: 'Valid type is required (aadhar or pan)' });
     }
 
     if (!req.file) {
+      console.error('No file uploaded');
       return res.status(400).json({ message: 'File is required' });
     }
 
     const fileUrl = '/uploads/' + req.file.filename;
+    console.log('File URL:', fileUrl);
 
     if (type === 'aadhar') {
       await pool.query(
@@ -612,6 +617,8 @@ exports.uploadTechnicianProof = async (req, res) => {
       );
     }
 
+    console.log(`${type} proof uploaded successfully for technician ${technicianId}`);
+
     res.json({ 
       message: 'Proof uploaded successfully. Awaiting verification.',
       fileUrl,
@@ -619,6 +626,8 @@ exports.uploadTechnicianProof = async (req, res) => {
     });
   } catch (err) {
     console.error('Upload proof error:', err);
-    res.status(500).json({ message: 'Server error uploading proof' });
+    console.error('Error details:', err.message);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ message: `Server error uploading proof: ${err.message}` });
   }
 };
