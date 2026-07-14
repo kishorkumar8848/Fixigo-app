@@ -8,6 +8,7 @@ import 'admin_customers_screen.dart';
 import 'admin_bookings_screen.dart';
 import 'admin_services_screen.dart';
 import 'admin_resell_requests_screen.dart';
+import 'fixigo_logout_dialog.dart';
 
 // placeholders for other UI blocks
 class PlaceholderScreen extends StatelessWidget {
@@ -49,26 +50,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
   ];
 
   void _handleLogout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
+    final confirm = await showFixigoLogoutDialog(context);
 
     if (confirm == true) {
       await Session.clear();

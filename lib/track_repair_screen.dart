@@ -153,10 +153,12 @@ class _TrackRepairScreenState extends State<TrackRepairScreen> {
         title: 'Track Repair',
         showBack: Navigator.of(context).canPop(),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          child: Column(
+            children: [
             if (status == 'cancelled') ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 20),
@@ -250,23 +252,32 @@ class _TrackRepairScreenState extends State<TrackRepairScreen> {
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                height: 46,
+                height: 52,
                 child: ElevatedButton.icon(
                   onPressed: _showCancelDialog,
-                  icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
-                  label: const Text('Cancel Repair'),
+                  icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 20),
+                  label: const Text(
+                    'Cancel Repair',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.error,
                     foregroundColor: Colors.white,
                     elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
             ],
           ],
+        ),
         ),
       ),
     );

@@ -245,14 +245,15 @@ exports.technicianLogin = async (req, res) => {
 
 exports.adminLogin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password;
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password required' });
     }
 
     // Check against admin credentials
-    const result = await pool.query('SELECT * FROM admins WHERE email = $1', [email]);
+    const result = await pool.query('SELECT * FROM admins WHERE LOWER(email) = $1', [email]);
     if (result.rows.length === 0) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -584,7 +585,11 @@ exports.uploadTechnicianProof = async (req, res) => {
     const technicianId = req.user.id;
     const { type } = req.body; // 'aadhar' or 'pan'
 
-    console.log('Upload proof request:', { technicianId, type, hasFile: !!req.file });
+    console.log('Upload proof request:', { technicianId, type, hasFile: !!req.file, role: req.user.role });
+
+    if (req.user.role && req.user.role !== 'technician') {
+      return res.status(403).json({ message: 'Only technicians can upload ID proof' });
+    }
 
     if (!type || (type !== 'aadhar' && type !== 'pan')) {
       console.error('Invalid type:', type);
@@ -599,30 +604,40 @@ exports.uploadTechnicianProof = async (req, res) => {
     const fileUrl = '/uploads/' + req.file.filename;
     console.log('File URL:', fileUrl);
 
+    // Avoid CASE + enum type mismatches on Postgres (common cause of 500s).
+    // Update the proof columns first, then re-open overall status if previously rejected.
     if (type === 'aadhar') {
       await pool.query(
-        `UPDATE technicians 
-         SET aadhar_card_url = $1, aadhar_verification_status = 'pending', 
-             verification_status = CASE WHEN verification_status = 'rejected' THEN 'pending' ELSE verification_status END 
+        `UPDATE technicians
+         SET aadhar_card_url = $1,
+             aadhar_verification_status = 'pending'
          WHERE id = $2`,
         [fileUrl, technicianId]
       );
-    } else if (type === 'pan') {
+    } else {
       await pool.query(
-        `UPDATE technicians 
-         SET pan_card_url = $1, pan_verification_status = 'pending',
-             verification_status = CASE WHEN verification_status = 'rejected' THEN 'pending' ELSE verification_status END 
+        `UPDATE technicians
+         SET pan_card_url = $1,
+             pan_verification_status = 'pending'
          WHERE id = $2`,
         [fileUrl, technicianId]
       );
     }
 
+    // Re-open overall verification whenever a proof is (re)submitted.
+    await pool.query(
+      `UPDATE technicians
+       SET verification_status = 'pending'
+       WHERE id = $1`,
+      [technicianId]
+    );
+
     console.log(`${type} proof uploaded successfully for technician ${technicianId}`);
 
-    res.json({ 
+    res.json({
       message: 'Proof uploaded successfully. Awaiting verification.',
       fileUrl,
-      type
+      type,
     });
   } catch (err) {
     console.error('Upload proof error:', err);

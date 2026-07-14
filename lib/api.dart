@@ -50,13 +50,16 @@ class Api {
     return headers;
   }
 
+  // Render free tier can cold-start slowly; keep timeouts generous for writes.
+  static const Duration _requestTimeout = Duration(seconds: 45);
+
   static Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
     final url = Uri.parse(baseUrl + path);
     final resp = await http.post(
       url,
       headers: _getHeaders(),
       body: body != null ? jsonEncode(body) : null,
-    ).timeout(const Duration(seconds: 10));
+    ).timeout(_requestTimeout);
     final data = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
     return {'status': resp.statusCode, 'data': data};
   }
@@ -65,18 +68,25 @@ class Api {
       String path, Map<String, String> fields, String fileField, String filePath) async {
     final url = Uri.parse(baseUrl + path);
     final request = http.MultipartRequest('POST', url);
-    
+
     if (Session.token != null) {
       request.headers['Authorization'] = 'Bearer ${Session.token}';
     }
-    
+
     request.fields.addAll(fields);
     request.files.add(await http.MultipartFile.fromPath(fileField, filePath));
-    
-    final streamedResponse = await request.send().timeout(const Duration(seconds: 10));
+
+    final streamedResponse = await request.send().timeout(_requestTimeout);
     final resp = await http.Response.fromStream(streamedResponse);
-    
-    final data = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
+
+    dynamic data = {};
+    if (resp.body.isNotEmpty) {
+      try {
+        data = jsonDecode(resp.body);
+      } catch (_) {
+        data = {'message': resp.body};
+      }
+    }
     return {'status': resp.statusCode, 'data': data};
   }
 

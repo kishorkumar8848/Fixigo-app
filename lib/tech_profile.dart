@@ -7,6 +7,7 @@ import 'role_selection.dart';
 import 'api.dart';
 import 'session.dart';
 import 'location_picker_screen.dart';
+import 'fixigo_logout_dialog.dart';
 
 class TechProfileScreen extends StatefulWidget {
   const TechProfileScreen({super.key});
@@ -482,26 +483,7 @@ class _TechProfileScreenState extends State<TechProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Logout'),
-                        content: const Text('Are you sure you want to logout?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                            ),
-                            child: const Text('Logout'),
-                          ),
-                        ],
-                      ),
-                    );
+                    final confirm = await showFixigoLogoutDialog(context);
 
                     if (confirm == true) {
                       await Session.clear();

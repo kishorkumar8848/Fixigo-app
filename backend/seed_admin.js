@@ -4,7 +4,7 @@ const pool = require('./config/db');
 async function seedAdmin() {
   try {
     const email = 'admin@fixigo.com';
-    const rawPassword = 'admin123';
+    const rawPassword = 'FixigoAdmin123';
     const role = 'super_admin';
 
     // Hash password

@@ -12,6 +12,12 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Ensure uploads directory exists (technician ID proofs, etc.)
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
@@ -48,12 +54,29 @@ async function initializeDatabase() {
       if (fs.existsSync(initSqlitePath)) {
         require(initSqlitePath);
       }
+      // Sync documented admin password even if an older SQLite DB used a different hash
+      const { ensureDefaultAdmin } = require('./migrations/ensure_default_admin');
+      await ensureDefaultAdmin(pool);
       return;
     }
 
     const client = await pool.connect();
     console.log('✓ Database connection successful');
     client.release();
+
+    // Ensure resale pickup columns exist (fixes "Server error submitting resale request")
+    const { ensureResaleSchema } = require('./migrations/ensure_resale_schema');
+    const schemaResult = await ensureResaleSchema(pool);
+    console.log('✓ resale_requests schema ready (' + schemaResult.engine + ')');
+
+    // Ensure technician ID-proof columns exist (fixes "Server error uploading proof")
+    const { ensureTechnicianSchema } = require('./migrations/ensure_technician_schema');
+    const techSchema = await ensureTechnicianSchema(pool);
+    console.log('✓ technicians ID-proof schema ready (' + techSchema.engine + ')');
+
+    // Ensure documented admin credentials work in production
+    const { ensureDefaultAdmin } = require('./migrations/ensure_default_admin');
+    await ensureDefaultAdmin(pool);
   } catch (err) {
     console.error('✗ Database connection failed:', err.message);
     console.error('Please ensure Supabase is configured and credentials in .env are correct');

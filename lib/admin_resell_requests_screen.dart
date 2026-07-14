@@ -317,17 +317,17 @@ class _AdminResellRequestsScreenState extends State<AdminResellRequestsScreen> {
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
                                           child: CachedNetworkImage(
-                                            imageUrl: Api.baseUrl + r['image_url'].toString(),
-                                            height: 150,
+                                            imageUrl: _resolveImageUrl(r['image_url']),
+                                            height: 180,
                                             width: double.infinity,
                                             fit: BoxFit.cover,
                                             placeholder: (ctx, url) => Container(
-                                              height: 150,
+                                              height: 180,
                                               color: Colors.grey.shade100,
                                               child: const Center(child: CircularProgressIndicator()),
                                             ),
                                             errorWidget: (ctx, url, err) => Container(
-                                              height: 150,
+                                              height: 180,
                                               color: Colors.grey.shade100,
                                               child: const Center(
                                                 child: Icon(Icons.broken_image_outlined, color: Colors.grey),
@@ -354,7 +354,7 @@ class _AdminResellRequestsScreenState extends State<AdminResellRequestsScreen> {
                                         children: [
                                           _buildDetailCol('Age', '${r['age_years'] ?? 0} years'),
                                           _buildDetailCol('Working', r['working_status'] ?? 'N/A'),
-                                          _buildDetailCol('Condition', r['cosmetic_condition'] ?? 'N/A'),
+                                          _buildDetailCol('Condition', r['cosmetic_condition'] ?? r['condition_description'] ?? 'N/A'),
                                         ],
                                       ),
                                       const SizedBox(height: 12),
@@ -411,39 +411,60 @@ class _AdminResellRequestsScreenState extends State<AdminResellRequestsScreen> {
 
                                       const Divider(height: 24),
 
-                                      // Actions
-                                      Row(
+                                      // Actions — stacked so labels never wrap mid-word
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
                                         children: [
                                           if (showApproveReject) ...[
-                                            Expanded(
-                                              child: OutlinedButton(
-                                                onPressed: () => _updateStatus(r['id'], 'rejected'),
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor: Colors.red,
-                                                  side: const BorderSide(color: Colors.red),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: OutlinedButton(
+                                                    onPressed: () => _updateStatus(r['id'], 'rejected'),
+                                                    style: OutlinedButton.styleFrom(
+                                                      foregroundColor: Colors.red,
+                                                      side: const BorderSide(color: Colors.red),
+                                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                                    ),
+                                                    child: const Text(
+                                                      'Reject',
+                                                      maxLines: 1,
+                                                      softWrap: false,
+                                                      overflow: TextOverflow.visible,
+                                                    ),
+                                                  ),
                                                 ),
-                                                child: const Text('Reject'),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: ElevatedButton(
-                                                onPressed: () => _updateStatus(r['id'], 'approved'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: ElevatedButton(
+                                                    onPressed: () => _updateStatus(r['id'], 'approved'),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Colors.green,
+                                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                                    ),
+                                                    child: const Text(
+                                                      'Approve',
+                                                      maxLines: 1,
+                                                      softWrap: false,
+                                                      style: TextStyle(color: Colors.white),
+                                                    ),
+                                                  ),
                                                 ),
-                                                child: const Text('Approve', style: TextStyle(color: Colors.white)),
-                                              ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 8),
+                                            const SizedBox(height: 8),
                                           ],
-                                          Expanded(
-                                            child: ElevatedButton(
-                                              onPressed: () => _sendNotes(r['id'], r['admin_notes'], r['status']),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: AppColors.primary,
-                                              ),
-                                              child: const Text('Send Info', style: TextStyle(color: Colors.white)),
+                                          ElevatedButton(
+                                            onPressed: () => _sendNotes(r['id'], r['admin_notes'], r['status']),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppColors.primary,
+                                              padding: const EdgeInsets.symmetric(vertical: 12),
+                                            ),
+                                            child: const Text(
+                                              'Send Info',
+                                              maxLines: 1,
+                                              softWrap: false,
+                                              style: TextStyle(color: Colors.white),
                                             ),
                                           ),
                                         ],
@@ -469,6 +490,14 @@ class _AdminResellRequestsScreenState extends State<AdminResellRequestsScreen> {
         Text(val, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
       ],
     );
+  }
+
+  String _resolveImageUrl(dynamic path) {
+    final raw = path.toString().trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = Api.baseUrl.endsWith('/') ? Api.baseUrl.substring(0, Api.baseUrl.length - 1) : Api.baseUrl;
+    return raw.startsWith('/') ? '$base$raw' : '$base/$raw';
   }
 
   Widget _buildCheckIcon(String title, dynamic hasVal) {

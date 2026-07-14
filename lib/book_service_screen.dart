@@ -64,12 +64,15 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
     }
 
     if (widget.initialIssue != null) {
-      final idx = _issues.indexOf(widget.initialIssue!);
+      final issues = _currentIssues;
+      final idx = issues.indexOf(widget.initialIssue!);
       if (idx != -1) {
         _selectedIssue = idx;
         _step = 2;
       } else {
-        _selectedIssue = 6; // 'Other issue'
+        // Prefill unknown free-text issues under "Other Issue"
+        final otherIdx = issues.indexOf(ApplianceIssues.otherLabel);
+        _selectedIssue = otherIdx >= 0 ? otherIdx : issues.length - 1;
         _issueController.text = widget.initialIssue!;
         _step = 2;
       }
@@ -77,6 +80,32 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
       _selectedIssue = null;
       _issueController.clear();
     }
+  }
+
+  /// Issues for the currently selected appliance (always includes "Other Issue").
+  List<String> get _currentIssues {
+    if (_selectedAppliance == null) {
+      return ApplianceIssues.generic;
+    }
+    return ApplianceIssues.forAppliance(_appliances[_selectedAppliance!].name);
+  }
+
+  bool get _isOtherIssueSelected {
+    if (_selectedIssue == null) return false;
+    final issues = _currentIssues;
+    if (_selectedIssue! < 0 || _selectedIssue! >= issues.length) return false;
+    return issues[_selectedIssue!] == ApplianceIssues.otherLabel;
+  }
+
+  String get _selectedIssueText {
+    if (_selectedIssue == null) return '';
+    final issues = _currentIssues;
+    if (_selectedIssue! < 0 || _selectedIssue! >= issues.length) return '';
+    final label = issues[_selectedIssue!];
+    if (label == ApplianceIssues.otherLabel) {
+      return _issueController.text.trim();
+    }
+    return label;
   }
 
   int? _mapCategoryToIndex(String? category) {
@@ -137,7 +166,9 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
     setState(() => _isBooking = true);
 
     final applianceName = _appliances[_selectedAppliance!].name;
-    final issueName = _selectedIssue != 6 ? _issues[_selectedIssue!] : _issueController.text;
+    final issueName = _selectedIssueText.isNotEmpty
+        ? _selectedIssueText
+        : ApplianceIssues.otherLabel;
     final preferredDate = _selectedDate.toIso8601String().substring(0, 10); // YYYY-MM-DD
 
     try {
@@ -585,16 +616,6 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
     ),
   ];
 
-  final _issues = [
-    'Not turning on',
-    'Making unusual noise',
-    'Not cooling/heating',
-    'Water leakage',
-    'Remote control issue',
-    'Display problem',
-    'Other issue',
-  ];
-
   final _slots = [
     '9:00 AM – 11:00 AM',
     '11:00 AM – 1:00 PM',
@@ -604,6 +625,7 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final issues = _currentIssues;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: FixigoAppBar(
@@ -654,15 +676,21 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
                   selectedIndex: _selectedAppliance,
                   onSelect: (item) {
                     final idx = _appliances.indexOf(item);
-                    setState(() => _selectedAppliance = idx);
+                    setState(() {
+                      _selectedAppliance = idx;
+                      _selectedIssue = null;
+                      _issueController.clear();
+                    });
                   },
                 ),
                 _StepDescribeIssue(
-                  key: const ValueKey(1),
-                  issues: _issues,
+                  key: ValueKey('issue-${_selectedAppliance ?? -1}'),
+                  issues: issues,
                   selectedIssue: _selectedIssue,
                   controller: _issueController,
+                  isOtherSelected: _isOtherIssueSelected,
                   onSelect: (i) => setState(() => _selectedIssue = i),
+                  onDetailsChanged: () => setState(() {}),
                 ),
                 _StepSelectSlot(
                   key: const ValueKey(2),
@@ -677,7 +705,12 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
                   appliance: _selectedAppliance != null
                       ? _appliances[_selectedAppliance!].name
                       : '',
-                  issue: _selectedIssue != null ? _issues[_selectedIssue!] : '',
+                  issue: _selectedIssueText.isNotEmpty
+                      ? _selectedIssueText
+                      : (_selectedIssue != null &&
+                              _selectedIssue! < issues.length
+                          ? issues[_selectedIssue!]
+                          : ''),
                   slot: _selectedSlot ?? '',
                   date: _selectedDate,
                   onSelectLocation: _chooseLocationOnMap,
@@ -711,7 +744,11 @@ class _BookServiceScreenState extends State<BookServiceScreen> {
       case 0:
         return _selectedAppliance != null;
       case 1:
-        return _selectedIssue != null;
+        if (_selectedIssue == null) return false;
+        if (_isOtherIssueSelected) {
+          return _issueController.text.trim().isNotEmpty;
+        }
+        return true;
       case 2:
         return _selectedSlot != null;
       default:
@@ -998,12 +1035,150 @@ class _ApplianceItem {
   const _ApplianceItem(this.name, this.icon, this.color, this.imageUrl, this.category);
 }
 
+/// Appliance-specific service issues shown in booking Step 2.
+class ApplianceIssues {
+  static const String otherLabel = 'Other Issue';
+
+  static const List<String> tv = [
+    'Display problem',
+    'No picture',
+    'No sound',
+    'Screen cracked',
+    'HDMI issue',
+    'Remote not working',
+    'Power issue',
+  ];
+
+  static const List<String> refrigerator = [
+    'Not cooling',
+    'Water leakage',
+    'Ice buildup',
+    'Compressor issue',
+    'Door not closing',
+    'Unusual noise',
+  ];
+
+  static const List<String> washingMachine = [
+    'Not spinning',
+    'Water not draining',
+    'Water leakage',
+    'Drum not rotating',
+    'Door lock issue',
+    'Excessive vibration',
+  ];
+
+  static const List<String> airConditioner = [
+    'Not cooling',
+    'Gas leakage',
+    'Water leakage',
+    'Unusual noise',
+    'Remote issue',
+    'Fan not working',
+  ];
+
+  static const List<String> microwave = [
+    'Not heating',
+    'Sparking inside',
+    'Door issue',
+    'Turntable not rotating',
+    'Display issue',
+  ];
+
+  static const List<String> fan = [
+    'Not rotating',
+    'Low speed',
+    'Noise',
+    'Capacitor issue',
+    'Regulator issue',
+  ];
+
+  static const List<String> laptop = [
+    'Not turning on',
+    'Battery issue',
+    'Screen issue',
+    'Keyboard issue',
+    'Charging issue',
+    'Overheating',
+  ];
+
+  static const List<String> mobile = [
+    'Display issue',
+    'Battery draining',
+    'Charging issue',
+    'Camera issue',
+    'Speaker issue',
+    'Network issue',
+  ];
+
+  static const List<String> generic = [
+    'Not turning on',
+    'Making unusual noise',
+    'Not cooling/heating',
+    'Water leakage',
+    'Display problem',
+    'Power issue',
+    otherLabel,
+  ];
+
+  static List<String> forAppliance(String applianceName) {
+    final n = applianceName.toLowerCase().trim();
+    List<String> base;
+
+    if (n.contains('television') ||
+        n == 'tv' ||
+        n.startsWith('tv ') ||
+        n.contains('led tv') ||
+        n.contains('smart tv')) {
+      base = tv;
+    } else if (n.contains('refrigerator') ||
+        n.contains('fridge') ||
+        n.contains('deep freezer')) {
+      base = refrigerator;
+    } else if (n.contains('washing') || n.contains('washer')) {
+      base = washingMachine;
+    } else if (n.contains('air conditioner') ||
+        n == 'ac' ||
+        n.startsWith('ac ') ||
+        n.contains(' split ac') ||
+        n.contains('window ac')) {
+      base = airConditioner;
+    } else if (n.contains('microwave') || n.contains('otg')) {
+      base = microwave;
+    } else if (n.contains('fan')) {
+      base = fan;
+    } else if (n.contains('laptop') || n.contains('notebook')) {
+      base = laptop;
+    } else if (n.contains('mobile') ||
+        n.contains('phone') ||
+        n.contains('smartphone')) {
+      base = mobile;
+    } else if (n.contains('air cooler') || n.contains('water cooler')) {
+      base = airConditioner;
+    } else if (n.contains('desktop') || n.contains(' pc')) {
+      base = laptop;
+    } else if (n.contains('home theater') ||
+        n.contains('sound bar') ||
+        n.contains('speaker') ||
+        n.contains('projector') ||
+        n.contains('set-top') ||
+        n.contains('gaming console')) {
+      base = tv;
+    } else {
+      return List<String>.from(generic);
+    }
+
+    return [...base, otherLabel];
+  }
+}
+
 // ── Step 2: Describe Issue ────────────────────────────────────────────────────
 class _StepDescribeIssue extends StatelessWidget {
   final List<String> issues;
   final int? selectedIssue;
   final TextEditingController controller;
   final ValueChanged<int> onSelect;
+  final bool isOtherSelected;
+  final VoidCallback? onDetailsChanged;
 
   const _StepDescribeIssue({
     super.key,
@@ -1011,6 +1186,8 @@ class _StepDescribeIssue extends StatelessWidget {
     required this.selectedIssue,
     required this.controller,
     required this.onSelect,
+    this.isOtherSelected = false,
+    this.onDetailsChanged,
   });
 
   @override
@@ -1052,12 +1229,15 @@ class _StepDescribeIssue extends StatelessWidget {
                       size: 20,
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      issues[i],
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
-                        color: sel ? AppColors.primary : AppColors.textPrimary,
+                    Expanded(
+                      child: Text(
+                        issues[i],
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                          color:
+                              sel ? AppColors.primary : AppColors.textPrimary,
+                        ),
                       ),
                     ),
                   ],
@@ -1069,9 +1249,12 @@ class _StepDescribeIssue extends StatelessWidget {
           TextField(
             controller: controller,
             maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Describe your issue in detail (optional)',
-              prefixIcon: Padding(
+            onChanged: (_) => onDetailsChanged?.call(),
+            decoration: InputDecoration(
+              hintText: isOtherSelected
+                  ? 'Describe your issue in detail *'
+                  : 'Describe your issue in detail (optional)',
+              prefixIcon: const Padding(
                 padding: EdgeInsets.only(left: 12, top: 12),
                 child: Icon(Icons.edit_note_rounded,
                     color: AppColors.textTertiary),

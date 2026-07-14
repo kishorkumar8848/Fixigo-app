@@ -41,7 +41,12 @@ class _AdminTechniciansScreenState extends State<AdminTechniciansScreen> with Si
         final List<dynamic> data = response['data'] ?? [];
         setState(() {
           _allTechnicians = data;
-          _pendingTechnicians = data.where((t) => t['verification_status'] == 'pending').toList();
+          _pendingTechnicians = data.where((t) {
+            final overall = t['verification_status'] == 'pending';
+            final aadharPending = t['aadhar_verification_status'] == 'pending';
+            final panPending = t['pan_verification_status'] == 'pending';
+            return overall || aadharPending || panPending;
+          }).toList();
           _isLoading = false;
         });
       } else {

@@ -2,10 +2,15 @@ const pool = require('../config/db');
 
 // ======== CUSTOMER RESALE FUNCTIONS ========
 
+// Use 0/1 so both SQLite (strict bind types) and Postgres BOOLEAN accept the value.
+function toBoolInt(value) {
+  return (value === true || value === 'true' || value === 1 || value === '1') ? 1 : 0;
+}
+
 exports.submitResaleRequest = async (req, res) => {
   try {
     const { 
-      customerId, 
+      customerId: bodyCustomerId, 
       appliance_type, 
       condition_description, 
       expected_price,
@@ -21,6 +26,11 @@ exports.submitResaleRequest = async (req, res) => {
       address
     } = req.body;
 
+    // Prefer authenticated customer id from JWT over client-supplied id
+    const customerId = (req.user && req.user.role === 'customer' && req.user.id)
+      ? req.user.id
+      : bodyCustomerId;
+
     console.log('Resale request received:', { customerId, appliance_type, expected_price, address });
 
     if (!customerId || !appliance_type || !expected_price) {
@@ -32,6 +42,10 @@ exports.submitResaleRequest = async (req, res) => {
     if (req.file) {
       imageUrl = '/uploads/' + req.file.filename;
       console.log('Image uploaded:', imageUrl);
+    } else {
+      return res.status(400).json({
+        message: 'Appliance photo is required. Please upload at least one image.',
+      });
     }
 
     const queryText = `
@@ -50,14 +64,14 @@ exports.submitResaleRequest = async (req, res) => {
       expected_price, 
       'pending',
       brand || '',
-      age_years ? parseInt(age_years) : 0,
+      age_years ? parseInt(age_years, 10) : 0,
       original_price ? parseFloat(original_price) : 0.0,
       estimated_value ? parseFloat(estimated_value) : 0.0,
       working_status || 'Working',
       cosmetic_condition || 'Good',
-      has_bill === 'true' || has_bill === 1 || has_bill === '1' ? 1 : 0,
-      has_box === 'true' || has_box === 1 || has_box === '1' ? 1 : 0,
-      has_accessories === 'true' || has_accessories === 1 || has_accessories === '1' ? 1 : 0,
+      toBoolInt(has_bill),
+      toBoolInt(has_box),
+      toBoolInt(has_accessories),
       imageUrl,
       address || ''
     ];
@@ -77,6 +91,15 @@ exports.submitResaleRequest = async (req, res) => {
     console.error('Submit resale request error:', err);
     console.error('Error details:', err.message);
     console.error('Error stack:', err.stack);
+
+    // Friendlier messages for common production failures
+    if (err.code === '23503') {
+      return res.status(400).json({ message: 'Invalid customer account. Please log out and log in again, then retry scheduling pickup.' });
+    }
+    if (err.code === '42703') {
+      return res.status(500).json({ message: 'Server database is missing required resale columns. Please redeploy/restart the backend so schema migration can run.' });
+    }
+
     res.status(500).json({ message: `Server error submitting resale request: ${err.message}` });
   }
 };

@@ -3,12 +3,11 @@ import 'package:flutter/services.dart';
 import 'app_theme.dart';
 import 'common_widgets.dart';
 import 'resale_valuation_engine.dart';
-import 'resell_schedule_screen.dart';
+import 'resell_confirmation_screen.dart';
 import 'session.dart';
 import 'location_picker_screen.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'api.dart';
 
 class ResellScreen extends StatefulWidget {
   const ResellScreen({super.key});
@@ -20,16 +19,17 @@ class ResellScreen extends StatefulWidget {
 class _ResellScreenState extends State<ResellScreen> {
   int? _selectedAppliance;
   String _condition = 'Good';
-  bool _showValuation = false;
   bool _locationSupported = true;
   File? _selectedImage;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final pickedFile =
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (pickedFile != null) {
       setState(() {
         _selectedImage = File(pickedFile.path);
+        _valuationResult = null;
       });
     }
   }
@@ -41,48 +41,124 @@ class _ResellScreenState extends State<ResellScreen> {
         Color(0xFF00897B), 'Laundry'),
     _ApplianceOption(
         'Refrigerator', Icons.kitchen_rounded, Color(0xFF6A1B9A), 'Kitchen'),
-    _ApplianceOption(
-        'TV', Icons.tv_rounded, Color(0xFF0277BD), 'Entertainment'),
+    _ApplianceOption('TV', Icons.tv_rounded, Color(0xFF0277BD), 'Entertainment'),
     _ApplianceOption(
         'Microwave', Icons.microwave_rounded, Color(0xFFE65100), 'Kitchen'),
+    _ApplianceOption(
+        'Laptop', Icons.laptop_mac_rounded, Color(0xFF37474F), 'IT & Smart'),
+    _ApplianceOption(
+        'Mobile', Icons.smartphone_rounded, Color(0xFF455A64), 'IT & Smart'),
+    _ApplianceOption('Fan', Icons.toys_rounded, Color(0xFF1976D2), 'Electrical'),
     _ApplianceOption(
         'Other', Icons.devices_other_rounded, Color(0xFF546E7A), 'All'),
   ];
 
+  static const Map<String, List<String>> _brandsByAppliance = {
+    'TV': [
+      'Samsung', 'LG', 'Sony', 'Xiaomi', 'TCL', 'Panasonic', 'OnePlus', 'Vu',
+      'Toshiba', 'Other'
+    ],
+    'Refrigerator': [
+      'LG', 'Samsung', 'Whirlpool', 'Godrej', 'Haier', 'Bosch', 'Panasonic',
+      'Voltas', 'Other'
+    ],
+    'Washing Machine': [
+      'LG', 'Samsung', 'Whirlpool', 'IFB', 'Bosch', 'Panasonic', 'Godrej',
+      'Haier', 'Other'
+    ],
+    'AC': [
+      'LG', 'Samsung', 'Voltas', 'Daikin', 'Blue Star', 'Hitachi', 'Carrier',
+      'Panasonic', 'Other'
+    ],
+    'Laptop': [
+      'Dell', 'HP', 'Lenovo', 'Apple', 'Asus', 'Acer', 'MSI', 'Microsoft', 'Other'
+    ],
+    'Mobile': [
+      'Apple', 'Samsung', 'Xiaomi', 'OnePlus', 'Realme', 'Vivo', 'Oppo',
+      'Google', 'Other'
+    ],
+    'Fan': [
+      'Havells', 'Usha', 'Orient', 'Crompton', 'Bajaj', 'Atomberg', 'Other'
+    ],
+    'Microwave': [
+      'LG', 'Samsung', 'IFB', 'Panasonic', 'Whirlpool', 'Morphy Richards', 'Other'
+    ],
+    'Water Purifier': [
+      'Kent', 'Aquaguard', 'Livpure', 'Pureit', 'AO Smith', 'Blue Star', 'Other'
+    ],
+    'Geyser': [
+      'Racold', 'Havells', 'Bajaj', 'AO Smith', 'Crompton', 'Venus', 'Other'
+    ],
+    'Mixer Grinder': [
+      'Preethi', 'Philips', 'Bajaj', 'Butterfly', 'Wonderchef', 'Other'
+    ],
+    'Speaker': [
+      'JBL', 'Sony', 'Boat', 'Bose', 'Marshall', 'Samsung', 'Other'
+    ],
+    'Water Heater': [
+      'Racold', 'Havells', 'Bajaj', 'AO Smith', 'Crompton', 'Other'
+    ],
+    'Other': ['Other'],
+  };
+
   final _conditions = ['Excellent', 'Good', 'Fair', 'Poor'];
+  late final List<int> _purchaseYears;
 
   late final TextEditingController _locationController;
-  late final TextEditingController _brandController;
-  late final TextEditingController _yearController;
+  late final TextEditingController _modelController;
   late final TextEditingController _originalPriceController;
   late final TextEditingController _manualApplianceController;
+  late final TextEditingController _customBrandController;
   String? _manualAppliance;
+  String? _selectedBrand;
+  int? _selectedYear;
   String _workingStatus = 'Working';
-  String _cosmeticCondition = 'Excellent';
+  String _cosmeticCondition = 'Good';
   bool _hasBill = false;
   bool _hasBox = false;
   bool _hasWarranty = false;
   bool _hasAccessories = false;
   ResaleValuationResult? _valuationResult;
 
+  String get _selectedApplianceName {
+    if (_manualAppliance != null && _manualAppliance!.trim().isNotEmpty) {
+      return _manualAppliance!.trim();
+    }
+    if (_selectedAppliance != null) {
+      return _appliances[_selectedAppliance!].name;
+    }
+    return '';
+  }
+
+  List<String> get _availableBrands {
+    final name = _selectedApplianceName;
+    if (name.isEmpty) return const [];
+    return _brandsByAppliance[name] ??
+        _brandsByAppliance['Other'] ??
+        const ['Other'];
+  }
+
   @override
   void initState() {
     super.initState();
+    final currentYear = DateTime.now().year;
+    _purchaseYears =
+        List.generate(25, (i) => currentYear - i); // current year back 24 yrs
     _locationController = TextEditingController(text: Session.address ?? '');
-    _brandController = TextEditingController();
-    _yearController = TextEditingController();
+    _modelController = TextEditingController();
     _originalPriceController = TextEditingController();
     _manualApplianceController = TextEditingController();
+    _customBrandController = TextEditingController();
     _validateLocation();
   }
 
   @override
   void dispose() {
     _locationController.dispose();
-    _brandController.dispose();
-    _yearController.dispose();
+    _modelController.dispose();
     _originalPriceController.dispose();
     _manualApplianceController.dispose();
+    _customBrandController.dispose();
     super.dispose();
   }
 
@@ -99,6 +175,7 @@ class _ResellScreenState extends State<ResellScreen> {
         TextPosition(offset: _locationController.text.length),
       );
       _validateLocation();
+      _valuationResult = null;
     });
   }
 
@@ -120,28 +197,94 @@ class _ResellScreenState extends State<ResellScreen> {
         Session.latitude = result.latitude;
         Session.longitude = result.longitude;
         _validateLocation();
+        _valuationResult = null;
       });
     }
   }
 
+  void _onApplianceSelected(int index) {
+    final name = _appliances[index].name;
+    if (name == 'Other') {
+      _openAllAppliances();
+      return;
+    }
+    setState(() {
+      _selectedAppliance = index;
+      _manualAppliance = null;
+      _selectedBrand = null;
+      _customBrandController.clear();
+      _valuationResult = null;
+    });
+  }
+
+  String? _validateRequiredFields() {
+    if (!_locationSupported) {
+      return 'Please enter a supported pickup location (Chennai).';
+    }
+    if (_selectedApplianceName.isEmpty) {
+      return 'Please select an appliance type.';
+    }
+    if (_selectedImage == null) {
+      return 'Please upload at least one photo of the appliance.';
+    }
+    final brand = _effectiveBrand;
+    if (brand.isEmpty) {
+      return 'Please select the appliance brand.';
+    }
+    if (_selectedBrand == 'Other' &&
+        _customBrandController.text.trim().isEmpty) {
+      return 'Please enter the brand name.';
+    }
+    if (_modelController.text.trim().isEmpty) {
+      return 'Please enter the model details.';
+    }
+    if (_selectedYear == null) {
+      return 'Please select the year of purchase.';
+    }
+    if (_originalPriceController.text.trim().isEmpty ||
+        (int.tryParse(_originalPriceController.text.trim()) ?? 0) <= 0) {
+      return 'Please enter a valid original price / market value.';
+    }
+    if (_condition.trim().isEmpty) {
+      return 'Please select the condition.';
+    }
+    if (_workingStatus.trim().isEmpty) {
+      return 'Please select the working status.';
+    }
+    return null;
+  }
+
+  String get _effectiveBrand {
+    if (_selectedBrand == null) return '';
+    if (_selectedBrand == 'Other') {
+      return _customBrandController.text.trim();
+    }
+    return _selectedBrand!;
+  }
+
   void _calculateValuation() {
-    final selectedApplianceName = _manualAppliance ??
-        (_selectedAppliance != null
-            ? _appliances[_selectedAppliance!].name
-            : 'Other');
+    final error = _validateRequiredFields();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), duration: const Duration(seconds: 3)),
+      );
+      return;
+    }
+
+    final selectedApplianceName = _selectedApplianceName;
     final category = _selectedAppliance != null
         ? _appliances[_selectedAppliance!].category
         : 'All';
-    final purchaseYear =
-        int.tryParse(_yearController.text.trim()) ?? DateTime.now().year;
+    final purchaseYear = _selectedYear!;
     final originalPrice =
         int.tryParse(_originalPriceController.text.trim()) ?? 0;
 
     setState(() {
+      _cosmeticCondition = _condition;
       _valuationResult = ResaleValuationEngine.estimate(
         applianceName: selectedApplianceName,
         category: category,
-        brand: _brandController.text.trim(),
+        brand: _effectiveBrand,
         originalPrice: originalPrice,
         purchaseYear: purchaseYear,
         condition: _condition,
@@ -156,108 +299,54 @@ class _ResellScreenState extends State<ResellScreen> {
   }
 
   Future<void> _schedulePickup() async {
-    final now = DateTime.now();
-    final selectedDate = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 30)),
-    );
+    final error = _validateRequiredFields();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    if (_valuationResult == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please get an instant valuation first.')),
+      );
+      return;
+    }
 
-    if (selectedDate == null) return;
-
-    final selectedApplianceName = _manualAppliance ??
-        (_selectedAppliance != null
-            ? _appliances[_selectedAppliance!].name
-            : 'Other');
-
-    // Show loading
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final fields = {
-        'customerId': Session.userId?.toString() ?? '1',
-        'appliance_type': selectedApplianceName,
-        'condition_description': _condition,
-        'expected_price': (((_valuationResult?.minValue ?? 0) + (_valuationResult?.maxValue ?? 0)) ~/ 2).toString(),
-        'brand': _brandController.text.trim(),
-        'age_years': (DateTime.now().year - (int.tryParse(_yearController.text.trim()) ?? DateTime.now().year)).toString(),
-        'original_price': _originalPriceController.text.trim(),
-        'estimated_value': (((_valuationResult?.minValue ?? 0) + (_valuationResult?.maxValue ?? 0)) ~/ 2).toString(),
-        'working_status': _workingStatus,
-        'cosmetic_condition': _cosmeticCondition,
-        'has_bill': _hasBill.toString(),
-        'has_box': _hasBox.toString(),
-        'has_accessories': _hasAccessories.toString(),
-        'address': _locationController.text.trim(),
-      };
-
-      print('Submitting resale request with fields: $fields');
-
-      Map<String, dynamic> resp;
-      if (_selectedImage != null) {
-        resp = await Api.multipartPost('/resale', fields, 'image', _selectedImage!.path);
-      } else {
-        resp = await Api.post('/resale', fields);
-      }
-
-      print('Resale response: $resp');
-
-      if (mounted) {
-        Navigator.pop(context); // Pop loading
-      }
-
-      if (resp['status'] == 201 || resp['status'] == 200) {
-        ResellScheduleRepository.addSchedule(
-          appliance: selectedApplianceName,
-          scheduledDate: selectedDate,
-          address: _locationController.text.trim(),
-        );
-
-        if (mounted) {
-          await showDialog<void>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Success'),
-              content: const Text(
-                'Your pickup is scheduled and resale request submitted successfully to the admin portal.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
-      } else {
-        final msg = resp['data']?['message'] ?? 'Failed to submit request';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: $msg'),
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-      }
-    } catch (e, stackTrace) {
-      print('Submission error: $e');
-      print('Stack trace: $stackTrace');
-      if (mounted) {
-        Navigator.pop(context); // Pop loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to schedule pickup. Please check your internet connection and try again. Error: $e'),
-            duration: const Duration(seconds: 5),
+    final mid = ((_valuationResult!.minValue + _valuationResult!.maxValue) ~/ 2);
+    final confirmed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResellConfirmationScreen(
+          data: ResellConfirmationData(
+            applianceCategory: _selectedApplianceName,
+            brand: _effectiveBrand,
+            model: _modelController.text.trim(),
+            yearOfPurchase: _selectedYear!,
+            originalPrice: _originalPriceController.text.trim(),
+            condition: _condition,
+            workingStatus: _workingStatus,
+            photo: _selectedImage,
+            estimatedValueRange: _valuationResult!.displayRange,
+            estimatedMidValue: mid,
+            pickupAddress: _locationController.text.trim(),
+            hasBill: _hasBill,
+            hasBox: _hasBox,
+            hasAccessories: _hasAccessories,
           ),
-        );
-      }
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        _valuationResult = null;
+        _selectedImage = null;
+        _selectedBrand = null;
+        _selectedYear = null;
+        _modelController.clear();
+        _customBrandController.clear();
+        _originalPriceController.clear();
+      });
     }
   }
 
@@ -269,9 +358,12 @@ class _ResellScreenState extends State<ResellScreen> {
 
     if (selected != null) {
       setState(() {
-        _manualAppliance = null;
-        _selectedAppliance =
-            _appliances.indexWhere((item) => item.name == selected.name);
+        _manualAppliance = selected.name;
+        final idx = _appliances.indexWhere((item) => item.name == selected.name);
+        _selectedAppliance = idx >= 0 ? idx : null;
+        _selectedBrand = null;
+        _customBrandController.clear();
+        _valuationResult = null;
       });
     }
   }
@@ -301,6 +393,9 @@ class _ResellScreenState extends State<ResellScreen> {
                 setState(() {
                   _manualAppliance = value;
                   _selectedAppliance = null;
+                  _selectedBrand = null;
+                  _customBrandController.clear();
+                  _valuationResult = null;
                 });
                 _manualApplianceController.clear();
                 Navigator.pop(context);
@@ -376,18 +471,9 @@ class _ResellScreenState extends State<ResellScreen> {
                 final name = _appliances[i].name;
                 final icon = _appliances[i].icon;
                 final color = _appliances[i].color;
-                final sel = _selectedAppliance == i;
+                final sel = _selectedAppliance == i || _manualAppliance == name;
                 return GestureDetector(
-                  onTap: () {
-                    if (name == 'Other') {
-                      _openAllAppliances();
-                    } else {
-                      setState(() {
-                        _selectedAppliance = i;
-                        _manualAppliance = null;
-                      });
-                    }
-                  },
+                  onTap: () => _onApplianceSelected(i),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: (MediaQuery.of(context).size.width - 62) / 3,
@@ -438,10 +524,10 @@ class _ResellScreenState extends State<ResellScreen> {
             ),
             const SizedBox(height: 24),
             // Upload images
-            const Text('Upload Photos',
+            const Text('Upload Photos *',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            const Text('Add at least 2 photos for better valuation',
+            const Text('Photo is required for valuation and admin review',
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             const SizedBox(height: 12),
             GestureDetector(
@@ -452,7 +538,8 @@ class _ResellScreenState extends State<ResellScreen> {
                       width: double.infinity,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.primary.withOpacity(0.5)),
+                        border: Border.all(
+                            color: AppColors.primary.withOpacity(0.5)),
                         image: DecorationImage(
                           image: FileImage(_selectedImage!),
                           fit: BoxFit.cover,
@@ -467,7 +554,8 @@ class _ResellScreenState extends State<ResellScreen> {
                             color: Colors.black54,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.edit_rounded, color: Colors.white, size: 16),
+                          child: const Icon(Icons.edit_rounded,
+                              color: Colors.white, size: 16),
                         ),
                       ),
                     )
@@ -488,27 +576,73 @@ class _ResellScreenState extends State<ResellScreen> {
                       fontSize: 13, color: AppColors.textSecondary)),
               const SizedBox(height: 16),
             ],
-            const Text('Appliance Details',
+            const Text('Appliance Details *',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
-            TextField(
-              controller: _brandController,
+            DropdownButtonFormField<String>(
+              value: _selectedBrand != null &&
+                      _availableBrands.contains(_selectedBrand)
+                  ? _selectedBrand
+                  : null,
               decoration: const InputDecoration(
-                labelText: 'Brand & Model',
-                hintText: 'e.g. LG, 5 Star, 1.5 Ton',
+                labelText: 'Brand *',
                 prefixIcon: Icon(Icons.business_rounded),
               ),
+              hint: Text(
+                _selectedApplianceName.isEmpty
+                    ? 'Select appliance type first'
+                    : 'Select brand',
+              ),
+              items: _availableBrands
+                  .map((b) => DropdownMenuItem(value: b, child: Text(b)))
+                  .toList(),
+              onChanged: _availableBrands.isEmpty
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _selectedBrand = value;
+                        _valuationResult = null;
+                      });
+                    },
             ),
+            if (_selectedBrand == 'Other') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customBrandController,
+                decoration: const InputDecoration(
+                  labelText: 'Enter brand name *',
+                  prefixIcon: Icon(Icons.edit_rounded),
+                ),
+                onChanged: (_) => setState(() => _valuationResult = null),
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
-              controller: _yearController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              controller: _modelController,
               decoration: const InputDecoration(
-                labelText: 'Year of Purchase',
-                hintText: 'e.g. 2019',
+                labelText: 'Model *',
+                hintText: 'e.g. Bravia XR 55, 1.5 Ton 5 Star',
+                prefixIcon: Icon(Icons.devices_rounded),
+              ),
+              onChanged: (_) => setState(() => _valuationResult = null),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              value: _selectedYear,
+              decoration: const InputDecoration(
+                labelText: 'Year of Purchase *',
                 prefixIcon: Icon(Icons.calendar_today_rounded),
               ),
+              hint: const Text('Select year'),
+              items: _purchaseYears
+                  .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedYear = value;
+                  _valuationResult = null;
+                });
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -516,13 +650,14 @@ class _ResellScreenState extends State<ResellScreen> {
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: const InputDecoration(
-                labelText: 'Original Price / Market Value',
+                labelText: 'Original Price / Market Value *',
                 hintText: 'e.g. 45000',
                 prefixIcon: Icon(Icons.currency_rupee_rounded),
               ),
+              onChanged: (_) => setState(() => _valuationResult = null),
             ),
             const SizedBox(height: 16),
-            const Text('Condition',
+            const Text('Condition *',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             Row(
@@ -537,7 +672,11 @@ class _ResellScreenState extends State<ResellScreen> {
                 final col = colors[c]!;
                 return Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _condition = c),
+                    onTap: () => setState(() {
+                      _condition = c;
+                      _cosmeticCondition = c;
+                      _valuationResult = null;
+                    }),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.only(right: 8),
@@ -561,7 +700,7 @@ class _ResellScreenState extends State<ResellScreen> {
               }).toList(),
             ),
             const SizedBox(height: 16),
-            const Text('Working Status',
+            const Text('Working Status *',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             Wrap(
@@ -573,7 +712,10 @@ class _ResellScreenState extends State<ResellScreen> {
                 return ChoiceChip(
                   label: Text(status),
                   selected: selected,
-                  onSelected: (_) => setState(() => _workingStatus = status),
+                  onSelected: (_) => setState(() {
+                    _workingStatus = status;
+                    _valuationResult = null;
+                  }),
                   selectedColor: AppColors.primary,
                   backgroundColor: AppColors.surface,
                   labelStyle: TextStyle(
@@ -595,22 +737,34 @@ class _ResellScreenState extends State<ResellScreen> {
                 _CheckboxOption(
                   label: 'Original bill',
                   value: _hasBill,
-                  onChanged: (value) => setState(() => _hasBill = value),
+                  onChanged: (value) => setState(() {
+                    _hasBill = value;
+                    _valuationResult = null;
+                  }),
                 ),
                 _CheckboxOption(
                   label: 'Original box',
                   value: _hasBox,
-                  onChanged: (value) => setState(() => _hasBox = value),
+                  onChanged: (value) => setState(() {
+                    _hasBox = value;
+                    _valuationResult = null;
+                  }),
                 ),
                 _CheckboxOption(
                   label: 'Warranty',
                   value: _hasWarranty,
-                  onChanged: (value) => setState(() => _hasWarranty = value),
+                  onChanged: (value) => setState(() {
+                    _hasWarranty = value;
+                    _valuationResult = null;
+                  }),
                 ),
                 _CheckboxOption(
                   label: 'Accessories',
                   value: _hasAccessories,
-                  onChanged: (value) => setState(() => _hasAccessories = value),
+                  onChanged: (value) => setState(() {
+                    _hasAccessories = value;
+                    _valuationResult = null;
+                  }),
                 ),
               ],
             ),
@@ -906,6 +1060,8 @@ class _AllAppliancesScreenState extends State<AllAppliancesScreen> {
         'Mixer Grinder', Icons.kitchen_rounded, Color(0xFF8E24AA), 'Kitchen'),
     _ApplianceOption(
         'Laptop', Icons.laptop_mac_rounded, Color(0xFF37474F), 'IT & Smart'),
+    _ApplianceOption(
+        'Mobile', Icons.smartphone_rounded, Color(0xFF455A64), 'IT & Smart'),
     _ApplianceOption(
         'Speaker', Icons.speaker_rounded, Color(0xFF5D4037), 'Entertainment'),
     _ApplianceOption(
